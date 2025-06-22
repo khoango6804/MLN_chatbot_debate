@@ -15,15 +15,20 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel
 } from '@mui/material';
 import HistoryIcon from '@mui/icons-material/History';
 import DownloadIcon from '@mui/icons-material/Download';
 import CloseIcon from '@mui/icons-material/Close';
 import axios from 'axios';
+import { useLayout } from '../context/LayoutContext';
 
 // API URL should be configured in environment variables
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 // Create axios instance with default config
 const api = axios.create({
@@ -33,21 +38,26 @@ const api = axios.create({
   },
 });
 
-// Hàm tự động in đậm các cụm cần thiết
-function boldify(text) {
+// Hàm mới để định dạng văn bản từ AI, xóa bỏ các dấu *
+function formatAIResponse(text) {
   if (!text) return '';
+  // Thay thế **text** bằng thẻ <b>text</b> để in đậm
+  // Thay thế dấu xuống dòng bằng thẻ <br>
   return text
-    .replace(/(Dẫn chứng lý thuyết:)/g, '<b>$1</b>')
-    .replace(/(Ví dụ thực tiễn:)/g, '<b>$1</b>')
-    .replace(/(Lập luận:)/g, '<b>$1</b>');
+    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+    .replace(/\n/g, '<br />');
 }
 
 function DebateRoom() {
-  const { teamId } = useParams();
+  const navigate = useNavigate();
+  const { team_id } = useParams(); // Lấy team_id từ URL
+  const { setShowHeader } = useLayout();
+
+  const [teamInfo, setTeamInfo] = useState({ teamId: team_id }); // Khởi tạo với teamId
+
   const [phase, setPhase] = useState(0);
   const [topic, setTopic] = useState('');
-  const [customTopic, setCustomTopic] = useState('');
-  const [useCustomTopic, setUseCustomTopic] = useState(false);
+  const [courseCode, setCourseCode] = useState('MLN111');
   const [aiArguments, setAiArguments] = useState([]);
   const [teamArguments, setTeamArguments] = useState(['', '', '']);
   const [questions, setQuestions] = useState([]);
@@ -66,12 +76,126 @@ function DebateRoom() {
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [turnLoading, setTurnLoading] = useState(false);
   const MIN_TURNS = 15;
-  const navigate = useNavigate();
   const [studentArguments, setStudentArguments] = useState(["", "", ""]);
   const [aiPoints, setAiPoints] = useState([]);
   const [studentSummary, setStudentSummary] = useState("");
   const [aiSummary, setAiSummary] = useState("");
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [violationDetected, setViolationDetected] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(900); // 15 minutes for preparation
+  const [timerActive, setTimerActive] = useState(false);
+
+  // Effect to hide/show header
+  useEffect(() => {
+    setShowHeader(false); // Hide header when entering the debate room
+    return () => {
+      setShowHeader(true); // Show header when leaving
+    };
+  }, [setShowHeader]);
+
+  useEffect(() => {
+    if (!team_id) {
+      navigate('/');
+      return;
+    }
+    
+    const fetchDebateInfo = async () => {
+      try {
+        setLoading(true);
+        // Đã gỡ bỏ code yêu cầu toàn màn hình để tránh lỗi
+        const response = await api.get(`/api/debate/${team_id}/info`);
+        const { topic, members, course_code } = response.data;
+        
+        setTopic(topic);
+        setTeamInfo({ teamId: team_id, members, courseCode: course_code });
+        setPhase(0.5); // Bắt đầu vào giai đoạn chuẩn bị
+        setSuccess('Đã tải thông tin debate! Bắt đầu 10 phút chuẩn bị.');
+
+      } catch (error) {
+        console.error("Failed to fetch debate info:", error);
+        setError('Không thể tải thông tin debate. Phiên có thể đã hết hạn. Đang chuyển về trang chủ...');
+        setTimeout(() => navigate('/'), 3000);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDebateInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team_id, navigate]);
+
+  // Timer countdown effect
+  useEffect(() => {
+    if (!timerActive || timeLeft <= 0) {
+      if (timeLeft <= 0) {
+        setTimerActive(false);
+        if (phase === 0.5) {
+          handlePhase1();
+        } else if (phase === 2) {
+          setPhase(3);
+        }
+      }
+      return;
+    }
+    const intervalId = setInterval(() => {
+      setTimeLeft(prevTime => prevTime - 1);
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, [timeLeft, timerActive, phase]);
+
+  // Effect to set timers when phase changes
+  useEffect(() => {
+    setTimerActive(false); // Stop any previous timer
+    updateBackendPhase(phase); // Report new phase to backend
+
+    if (phase === 0.5) { // GĐ Chuẩn bị
+      setTimeLeft(600);
+      setTimerActive(true);
+    } else if (phase === 1.5) { // GĐ 1 Làm bài
+      setTimeLeft(300);
+      setTimerActive(true);
+    } else if (phase === 2) { // GĐ 2 Debate
+      setTimeLeft(420);
+      setTimerActive(true);
+    } else if (phase === 3) { // GĐ 3 Kết luận
+      setTimeLeft(300);
+      setTimerActive(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  // Effect to handle screen lock (fullscreen and visibility)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        handleViolation();
+      }
+    };
+
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        handleViolation();
+      }
+    };
+
+    const handleViolation = () => {
+      // Chỉ xử lý vi phạm trong các giai đoạn chính của debate
+      if (phase > 0 && phase < 4 && !violationDetected) {
+        setTimerActive(false); // Dừng timer khi vi phạm
+        setViolationDetected(true);
+      }
+    };
+
+    if (phase > 0 && phase < 4 && !violationDetected) {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      document.addEventListener('fullscreenchange', handleFullscreenChange);
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [phase, violationDetected]);
 
   useEffect(() => {
     if (phase === 4 && evaluation) {
@@ -89,32 +213,32 @@ function DebateRoom() {
     // eslint-disable-next-line
   }, [phase, evaluation]);
 
-  const startDebate = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await api.post('/api/debate/start', {
-        team_id: teamId,
-        members: ['Member 1', 'Member 2', 'Member 3', 'Member 4', 'Member 5'],
-        course_code: 'MLN111'
-      });
-      setTopic(response.data.data.topic);
-      setPhase(1);
-      setSuccess('Đã tạo chủ đề debate tự động!');
-    } catch (error) {
-      setError('Không thể tạo chủ đề debate.');
-    } finally {
-      setLoading(false);
+  const requestFullscreen = async () => {
+    const element = document.documentElement;
+    if (element.requestFullscreen) {
+      try {
+        await element.requestFullscreen();
+      } catch (err) {
+        console.error(`Lỗi khi vào chế độ toàn màn hình: ${err.message}`);
+        setError("Không thể vào chế độ toàn màn hình. Vui lòng tự bật (F11).");
+      }
     }
   };
 
+  const startDebate = async () => {
+    // Hàm này giờ trống vì logic đã được chuyển vào useEffect
+  };
+
   const handlePhase1 = async () => {
+    if (!team_id) return;
+    await requestFullscreen(); // Yêu cầu toàn màn hình khi bắt đầu
     try {
       setLoading(true);
       setError(null);
-      const response = await api.post(`/api/debate/${teamId}/phase1`);
+      const response = await api.post(`/api/debate/${team_id}/phase1`);
+      if(!topic) setTopic(response.data.data.topic);
       setAiPoints(response.data.data.ai_arguments);
-      setPhase(1.5); // 1.5: chờ SV nhập luận điểm
+      setPhase(1.5);
     } catch (error) {
       setError('Không thể lấy luận điểm AI.');
     } finally {
@@ -123,10 +247,10 @@ function DebateRoom() {
   };
 
   const handleSendStudentArguments = async () => {
+    if (!team_id) return;
     try {
       setLoading(true);
       setError(null);
-      // Gửi luận điểm sinh viên lên backend (nếu cần)
       setPhase(2);
     } catch (error) {
       setError('Không thể gửi luận điểm nhóm.');
@@ -136,16 +260,17 @@ function DebateRoom() {
   };
 
   const handlePhase3 = async () => {
+    if (!team_id) return;
     try {
       setLoading(true);
       setError(null);
-      const response = await api.post(`/api/debate/${teamId}/phase3`, {
-        team_responses: responses
-      });
+      // This endpoint now only evaluates, it doesn't need a body
+      const response = await api.post(`/api/debate/${team_id}/phase3`);
       setEvaluation(response.data.data.evaluation);
       setPhase(4);
     } catch (error) {
-      setError('Không thể gửi phản hồi.');
+      console.error("Failed to evaluate debate:", error);
+      setError('Không thể chấm điểm debate.');
     } finally {
       setLoading(false);
     }
@@ -163,11 +288,17 @@ function DebateRoom() {
     setResponses(newResponses);
   };
 
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+  };
+
   const handleExportResult = async () => {
-    if (!evaluation) return;
+    if (!evaluation || !teamInfo) return;
     let historyText = '';
     try {
-      const res = await api.get(`/api/debate/${teamId}/history`);
+      const res = await api.get(`/api/debate/${teamInfo.teamId}/history`);
       const chatHistory = res.data.chat_history || [];
       historyText = '\n\n--- Lịch sử debate ---\n';
       chatHistory.forEach(item => {
@@ -176,8 +307,66 @@ function DebateRoom() {
     } catch (err) {
       historyText = '\n\n(Lấy lịch sử debate thất bại)';
     }
-    const text = `Chủ đề: ${topic}\nKết quả debate:\n- Team Score:\n  + Lý thuyết: ${evaluation.team_score.theoretical_knowledge}\n  + Thực tiễn: ${evaluation.team_score.practical_application}\n  + Logic: ${evaluation.team_score.argument_strength}\n  + Văn hóa: ${evaluation.team_score.cultural_relevance}\n  + Trả lời: ${evaluation.team_score.response_quality}\n- AI Score:\n  + Lý thuyết: ${evaluation.ai_score.theoretical_knowledge}\n  + Thực tiễn: ${evaluation.ai_score.practical_application}\n  + Logic: ${evaluation.ai_score.argument_strength}\n  + Văn hóa: ${evaluation.ai_score.cultural_relevance}\n  + Trả lời: ${evaluation.ai_score.response_quality}\n- Winner: ${evaluation.winner}\n${historyText}`;
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+
+    // Tạo nội dung xuất file với bảng điểm chi tiết
+    let exportText = `Chủ đề: ${topic}\n\nKẾT QUẢ CHẤM ĐIỂM CHI TIẾT:\n`;
+    
+    // Tính tổng điểm
+    const totalScore = Object.entries(evaluation)
+      .filter(([phase]) => phase === 'phase1' || phase === 'phase2A' || phase === 'phase2B')
+      .reduce((total, [_, scores]) => {
+        return total + Object.values(scores).reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+      }, 0);
+    const totalMaxScore = 73; // 25 + 24 + 24
+
+    // Xuất điểm từng giai đoạn
+    Object.entries(evaluation).forEach(([phase, scores]) => {
+      if (phase === 'phase1' || phase === 'phase2A' || phase === 'phase2B') {
+        const phaseTitle = phase === 'phase1' ? 'GIAI ĐOẠN 1: Luận điểm ban đầu' :
+                          phase === 'phase2A' ? 'GIAI ĐOẠN 2A: Phản biện AI' :
+                          'GIAI ĐOẠN 2B: Phản biện SV';
+        
+        exportText += `\n${phaseTitle}:\n`;
+        exportText += `Tiêu chí\t\t\tĐiểm\tTối đa\n`;
+        exportText += `----------------------------------------\n`;
+        
+        if (phase === 'phase1') {
+          exportText += `Hiểu biết & nhận thức\t\t${scores['1.1'] || 0}\t6\n`;
+          exportText += `Tư duy phản biện\t\t\t${scores['1.2'] || 0}\t4\n`;
+          exportText += `Nhận diện văn hóa – xã hội\t\t${scores['1.3'] || 0}\t3\n`;
+          exportText += `Bản sắc & chiến lược\t\t\t${scores['1.4'] || 0}\t4\n`;
+          exportText += `Sáng tạo học thuật\t\t\t${scores['1.5'] || 0}\t4\n`;
+          exportText += `Đạo đức học thuật\t\t\t${scores['1.6'] || 0}\t4\n`;
+        } else if (phase === 'phase2A') {
+          exportText += `Hiểu biết & nhận thức\t\t${scores['2A.1'] || 0}\t5\n`;
+          exportText += `Tư duy phản biện\t\t\t${scores['2A.2'] || 0}\t5\n`;
+          exportText += `Ngôn ngữ & thuật ngữ\t\t\t${scores['2A.3'] || 0}\t4\n`;
+          exportText += `Chiến lược & điều hướng\t\t${scores['2A.4'] || 0}\t3\n`;
+          exportText += `Văn hóa – xã hội\t\t\t${scores['2A.5'] || 0}\t3\n`;
+          exportText += `Đạo đức & trung thực\t\t\t${scores['2A.6'] || 0}\t4\n`;
+        } else if (phase === 'phase2B') {
+          exportText += `Hiểu biết & nhận thức\t\t${scores['2B.1'] || 0}\t5\n`;
+          exportText += `Tư duy phản biện\t\t\t${scores['2B.2'] || 0}\t5\n`;
+          exportText += `Ngôn ngữ & thuật ngữ\t\t\t${scores['2B.3'] || 0}\t4\n`;
+          exportText += `Chiến lược & điều hướng\t\t${scores['2B.4'] || 0}\t3\n`;
+          exportText += `Văn hóa – xã hội\t\t\t${scores['2B.5'] || 0}\t3\n`;
+          exportText += `Đạo đức & đối thoại\t\t\t${scores['2B.6'] || 0}\t4\n`;
+        }
+        
+        const phaseTotal = Object.values(scores).reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+        const maxScore = phase === 'phase1' ? 25 : 24;
+        exportText += `----------------------------------------\n`;
+        exportText += `Tổng điểm giai đoạn:\t\t\t${phaseTotal}\t${maxScore}\n`;
+      }
+    });
+    
+    exportText += `\n========================================\n`;
+    exportText += `TỔNG ĐIỂM TOÀN BỘ:\t\t\t${totalScore}\t${totalMaxScore}\n`;
+    exportText += `Tỷ lệ đạt:\t\t\t\t${((totalScore / totalMaxScore) * 100).toFixed(1)}%\n`;
+    exportText += `========================================\n`;
+    exportText += historyText;
+
+    const blob = new Blob([exportText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -188,12 +377,12 @@ function DebateRoom() {
   };
 
   const handleSendStudentTurn = async () => {
-    if (!currentAnswer.trim()) return;
+    if (!currentAnswer.trim() || !teamInfo) return;
     setTurnLoading(true);
     try {
       // Gửi lượt SV trả lời
       const lastAiTurn = turns.length > 0 ? turns[turns.length - 1] : null;
-      const res = await api.post(`/api/debate/${teamId}/phase2/turn`, {
+      const res = await api.post(`/api/debate/${teamInfo.teamId}/phase2/turn`, {
         asker: "student",
         question: lastAiTurn ? lastAiTurn.question : "",
         answer: currentAnswer
@@ -215,10 +404,11 @@ function DebateRoom() {
 
   // Gửi tóm tắt của SV và lấy tóm tắt AI từ backend
   const handleSendSummary = async () => {
+    if (!teamInfo) return;
     setSummaryLoading(true);
     try {
       // Gửi tóm tắt SV lên backend, nhận tóm tắt AI về
-      const res = await api.post(`/api/debate/${teamId}/phase3/summary`, {
+      const res = await api.post(`/api/debate/${teamInfo.teamId}/phase3/summary`, {
         student_summary: studentSummary
       });
       setAiSummary(res.data.ai_summary);
@@ -231,19 +421,75 @@ function DebateRoom() {
   };
 
   // Hàm gọi xoá session khi về Home hoặc debate mới
-  const handleEndSession = async () => {
+  const handleEndSession = async (reason = null) => {
+    if (!team_id) return;
     try {
-      await api.delete(`/api/debate/${teamId}/end`);
-    } catch (err) {
-      // Không cần xử lý lỗi, chỉ log nếu muốn
-      // console.error('Không thể xoá session:', err);
+      const config = {
+        data: reason ? { reason: reason } : undefined,
+      };
+      await api.delete(`/api/debate/${team_id}/end`, config);
+      setSuccess('Phiên đã kết thúc.');
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      }
+    } catch (error) {
+      setError('Không thể kết thúc phiên.');
+      console.error("Ending session failed", error);
     }
   };
 
-  if (loading) {
+  // Function to map numeric phase to descriptive string
+  const getPhaseName = (p) => {
+    switch (p) {
+      case 0.5: return "GĐ Chuẩn bị";
+      case 1: return "GĐ 1: Trình bày luận điểm";
+      case 1.5: return "GĐ 1: Làm bài";
+      case 2: return "GĐ 2: Tranh luận Socrates";
+      case 3: return "GĐ 3: Kết luận";
+      case 4: return "Kết quả";
+      default: return "Bắt đầu";
+    }
+  };
+  
+  // Function to report phase changes to the backend
+  const updateBackendPhase = async (newPhase) => {
+    if (!teamInfo) return;
+    try {
+      await api.post(`/api/debate/${teamInfo.teamId}/phase`, { phase: getPhaseName(newPhase) });
+    } catch (error) {
+      console.error("Failed to update phase on backend", error);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!team_id) {
+        setError("Không thể tải báo cáo: Thiếu Team ID.");
+        return;
+    }
+    try {
+        const response = await api.get(`/api/debate/${team_id}/export_docx`, {
+            responseType: 'blob',
+        });
+
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `debate_result_${team_id}.docx`);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error("Tải báo cáo thất bại:", err);
+        setError("Không thể tải báo cáo. Vui lòng thử lại sau hoặc tải từ trang admin.");
+    }
+  };
+
+  if (!teamInfo || loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
         <CircularProgress />
+        {!teamInfo && <Typography sx={{ ml: 2 }}>Redirecting to home...</Typography>}
       </Box>
     );
   }
@@ -271,65 +517,51 @@ function DebateRoom() {
         )}
 
         {phase === 0 && (
-          <Box>
+          <Box sx={{ textAlign: 'center', p: 4 }}>
             <Typography variant="h6" gutterBottom>
-              Nhập chủ đề debate hoặc tạo tự động
+              Starting your debate session...
             </Typography>
-            <TextField
-              label="Nhập chủ đề debate"
-              value={customTopic}
-              onChange={e => setCustomTopic(e.target.value)}
-              fullWidth
-              sx={{ mb: 2 }}
-            />
-            <Button
-              variant="contained"
-              onClick={async () => {
-                setUseCustomTopic(true);
-                setTopic(customTopic);
-                setSuccess('Đã sử dụng chủ đề bạn nhập!');
-                setLoading(true);
-                setError(null);
-                try {
-                  // Gọi API để khởi tạo session
-                  await api.post('/api/debate/start', {
-                    team_id: teamId,
-                    members: ['Member 1', 'Member 2', 'Member 3', 'Member 4', 'Member 5'],
-                    course_code: 'MLN111'
-                  });
-                  setPhase(2); // Chuyển sang phase 2 sau khi backend đã có session
-                } catch (err) {
-                  setError('Không thể khởi tạo debate.');
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              disabled={!customTopic.trim()}
-            >
-              Sử dụng chủ đề này
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={() => {
-                setUseCustomTopic(false);
-                startDebate();
-              }}
-              sx={{ ml: 2 }}
-            >
-              Tạo chủ đề tự động
-            </Button>
+            <CircularProgress sx={{ mt: 2 }}/>
+          </Box>
+        )}
+
+        {phase === 0.5 && (
+          <Box>
+            <Typography variant="h6" gutterBottom align="center" color="secondary">
+              Giai đoạn 0: Chuẩn bị
+            </Typography>
+             <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
+              <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+                Thời gian chuẩn bị: {formatTime(timeLeft)}
+              </Typography>
+              <Typography variant="body1" sx={{ mt: 1 }}>
+                Bạn có 10 phút để nghiên cứu chủ đề. 
+                Hết giờ, hệ thống sẽ tự động chuyển sang Giai đoạn 1.
+              </Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                sx={{ mt: 2 }}
+                onClick={() => {
+                  setTimerActive(false);
+                  handlePhase1();
+                }}
+              >
+                Bắt đầu Phiên 1 ngay
+              </Button>
+            </Box>
           </Box>
         )}
 
         {phase > 0 && (
           <Box sx={{ mb: 3, background: '#f8f8f8', p: 2, borderRadius: 2 }}>
             <Typography variant="subtitle1" sx={{ fontSize: '1.1rem', whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
-              <b>Chủ đề Debate:</b>\n{topic}
+              <b>Chủ đề Debate:</b> {topic}
             </Typography>
           </Box>
         )}
 
-        {phase === 1 && !useCustomTopic && (
+        {phase === 1 && (
           <Box>
             <Typography variant="h6" gutterBottom>
               Phase 1: Luận điểm AI
@@ -342,16 +574,27 @@ function DebateRoom() {
 
         {phase === 1.5 && (
           <Box>
+            <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
+              <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+                Thời gian chuẩn bị: {formatTime(timeLeft)}
+              </Typography>
+              {timeLeft <= 0 && (
+                <Typography color="error" variant="h6" sx={{ mt: 1 }}>
+                  Hết giờ! Bạn không thể nộp luận điểm được nữa.
+                </Typography>
+              )}
+            </Box>
+
             <Typography variant="h6" gutterBottom>
               3 luận điểm của AI
             </Typography>
-            <ul>
+            <Box component="ul" sx={{ pl: 2, listStyle: 'none' }}>
               {aiPoints.map((point, idx) => (
-                <li key={idx}>
-                  <span dangerouslySetInnerHTML={{ __html: boldify(point) }} />
-                </li>
+                <Typography component="li" key={idx} sx={{ mb: 2, lineHeight: 1.7 }}>
+                  <span dangerouslySetInnerHTML={{ __html: formatAIResponse(point) }} />
+                </Typography>
               ))}
-            </ul>
+            </Box>
             <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
               Nhóm nhập ít nhất 3 luận điểm của mình
             </Typography>
@@ -369,12 +612,18 @@ function DebateRoom() {
                   setStudentArguments(newArgs);
                 }}
                 sx={{ mb: 2 }}
+                onPaste={(e) => { e.preventDefault(); return false; }}
+                onCopy={(e) => { e.preventDefault(); return false; }}
+                onCut={(e) => { e.preventDefault(); return false; }}
+                helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
+                disabled={timeLeft <= 0}
               />
             ))}
             <Button
               variant="contained"
               sx={{ mt: 1, mr: 2 }}
               onClick={() => setStudentArguments([...studentArguments, ""])}
+              disabled={timeLeft <= 0}
             >
               Thêm luận điểm
             </Button>
@@ -382,7 +631,7 @@ function DebateRoom() {
               variant="contained"
               color="success"
               sx={{ mt: 1 }}
-              disabled={studentArguments.filter(arg => arg.trim()).length < 3}
+              disabled={studentArguments.filter(arg => arg.trim()).length < 3 || timeLeft <= 0}
               onClick={handleSendStudentArguments}
             >
               Gửi luận điểm nhóm & Bắt đầu Debate Socratic
@@ -392,8 +641,13 @@ function DebateRoom() {
 
         {phase === 2 && (
           <Box>
+            <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
+              <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+                Thời gian phản biện: {formatTime(timeLeft)}
+              </Typography>
+            </Box>
             <Typography variant="h6" gutterBottom>
-              Phase 2: Debate Socratic (Turn-based)
+              Phase 2: Debate Socratic (AI hỏi trước)
             </Typography>
             <Box sx={{ maxHeight: 350, overflowY: 'auto', mb: 2, p: 1, background: '#f8f8f8', borderRadius: 2 }}>
               {turns.length === 0 && (
@@ -404,12 +658,12 @@ function DebateRoom() {
                   {turn.asker === 'ai' ? (
                     <>
                       <Typography variant="subtitle2" color="primary">AI hỏi:</Typography>
-                      <Typography sx={{ whiteSpace: 'pre-line' }} dangerouslySetInnerHTML={{ __html: boldify(turn.question) }} />
+                      <Typography sx={{ whiteSpace: 'pre-line' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.question) }} />
                     </>
                   ) : (
                     <>
                       <Typography variant="subtitle2" color="secondary">SV trả lời:</Typography>
-                      <Typography sx={{ ml: 2, color: 'text.secondary' }} dangerouslySetInnerHTML={{ __html: boldify(turn.answer) }} />
+                      <Typography sx={{ ml: 2, color: 'text.secondary' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.answer) }} />
                     </>
                   )}
                 </Box>
@@ -425,6 +679,10 @@ function DebateRoom() {
                   value={currentAnswer}
                   onChange={e => setCurrentAnswer(e.target.value)}
                   sx={{ mb: 2 }}
+                  onPaste={(e) => { e.preventDefault(); return false; }}
+                  onCopy={(e) => { e.preventDefault(); return false; }}
+                  onCut={(e) => { e.preventDefault(); return false; }}
+                  helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
                 />
                 <Button
                   variant="contained"
@@ -454,11 +712,18 @@ function DebateRoom() {
 
         {phase === 3 && (
           <Box>
+            <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
+              <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+                Thời gian kết luận: {formatTime(timeLeft)}
+              </Typography>
+               {timeLeft <= 0 && (
+                <Typography color="error" variant="h6" sx={{ mt: 1 }}>
+                  Hết giờ!
+                </Typography>
+              )}
+            </Box>
             <Typography variant="h6" gutterBottom>
               Phase 3: Tóm tắt quan điểm & Chấm điểm
-            </Typography>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Nhóm nhập tóm tắt quan điểm, luận điểm và lý do nhóm xứng đáng chiến thắng:
             </Typography>
             <TextField
               fullWidth
@@ -468,82 +733,254 @@ function DebateRoom() {
               value={studentSummary}
               onChange={e => setStudentSummary(e.target.value)}
               sx={{ mb: 2 }}
+              onPaste={(e) => { e.preventDefault(); return false; }}
+              onCopy={(e) => { e.preventDefault(); return false; }}
+              onCut={(e) => { e.preventDefault(); return false; }}
+              helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
+              disabled={timeLeft <= 0}
             />
-            <Button
-              variant="contained"
-              onClick={handleSendSummary}
-              disabled={!studentSummary.trim() || summaryLoading}
-              sx={{ mb: 2 }}
-            >
-              Gửi tóm tắt nhóm & Lấy tóm tắt AI
-            </Button>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2, mb: 2 }}>
+              <Button
+                variant="contained"
+                onClick={handleSendSummary}
+                disabled={!studentSummary.trim() || summaryLoading || timeLeft <= 0}
+              >
+                Gửi tóm tắt nhóm & Lấy tóm tắt AI
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                disabled={!aiSummary || !studentSummary.trim() || timeLeft <= 0}
+                onClick={handlePhase3}
+              >
+                Chấm điểm Debate
+              </Button>
+            </Box>
+            
             {aiSummary && (
               <Box sx={{ mt: 2, p: 2, background: '#f8f8f8', borderRadius: 2 }}>
                 <Typography variant="subtitle2" color="primary">Tóm tắt của AI:</Typography>
                 <Typography sx={{ whiteSpace: 'pre-line' }}>{aiSummary}</Typography>
               </Box>
             )}
-            <Button
-              variant="contained"
-              color="success"
-              sx={{ mt: 2 }}
-              disabled={!aiSummary || !studentSummary.trim()}
-              onClick={handlePhase3}
-            >
-              Chấm điểm debate
-            </Button>
           </Box>
         )}
 
         {phase === 4 && evaluation && (
           <Box>
             <Typography variant="h6" gutterBottom>
-              Kết quả Debate
+              Kết quả Debate Chi tiết
             </Typography>
-            <Typography>Team Score:</Typography>
-            <ul style={{marginTop: 0, marginBottom: 8}}>
-              <li>Lý thuyết: {evaluation.team_score.theoretical_knowledge}</li>
-              <li>Thực tiễn: {evaluation.team_score.practical_application}</li>
-              <li>Logic: {evaluation.team_score.argument_strength}</li>
-              <li>Văn hóa: {evaluation.team_score.cultural_relevance}</li>
-              <li>Trả lời: {evaluation.team_score.response_quality}</li>
-            </ul>
-            <Typography>AI Score:</Typography>
-            <ul style={{marginTop: 0, marginBottom: 8}}>
-              <li>Lý thuyết: {evaluation.ai_score.theoretical_knowledge}</li>
-              <li>Thực tiễn: {evaluation.ai_score.practical_application}</li>
-              <li>Logic: {evaluation.ai_score.argument_strength}</li>
-              <li>Văn hóa: {evaluation.ai_score.cultural_relevance}</li>
-              <li>Trả lời: {evaluation.ai_score.response_quality}</li>
-            </ul>
-            <Typography>Winner: {evaluation.winner}</Typography>
+            
+            {/* Hiển thị bảng điểm chi tiết theo từng giai đoạn */}
+            {evaluation.scores && Object.entries(evaluation.scores).map(([phase, scores]) => {
+              if (phase === 'phase1' || phase === 'phase2A' || phase === 'phase2B') {
+                const phaseTitle = phase === 'phase1' ? 'Giai đoạn 1: Luận điểm ban đầu' :
+                                 phase === 'phase2A' ? 'Giai đoạn 2A: Phản biện AI' :
+                                 'Giai đoạn 2B: Phản biện SV';
+                
+                const phaseTotal = Object.values(scores).reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+                const maxScore = phase === 'phase1' ? 25 : 24; // Tổng điểm tối đa của mỗi giai đoạn
+                
+                return (
+                  <Box key={phase} sx={{ mb: 3, p: 2, border: '1px solid #ddd', borderRadius: 2 }}>
+                    <Typography variant="h6" color="primary" gutterBottom>
+                      {phaseTitle}
+                    </Typography>
+                    
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 2 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>Tiêu chí</Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', textAlign: 'center' }}>Điểm</Typography>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold', textAlign: 'center' }}>Tối đa</Typography>
+                    </Box>
+                    
+                    {phase === 'phase1' && (
+                      <>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Hiểu biết & nhận thức</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['1.1'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>6</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Tư duy phản biện</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['1.2'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Nhận diện văn hóa – xã hội</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['1.3'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>3</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Bản sắc & chiến lược</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['1.4'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Sáng tạo học thuật</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['1.5'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Đạo đức học thuật</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['1.6'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                      </>
+                    )}
+                    
+                    {phase === 'phase2A' && (
+                      <>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Hiểu biết & nhận thức</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2A.1'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>5</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Tư duy phản biện</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2A.2'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>5</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Ngôn ngữ & thuật ngữ</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2A.3'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Chiến lược & điều hướng</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2A.4'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>3</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Văn hóa – xã hội</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2A.5'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>3</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Đạo đức & trung thực</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2A.6'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                      </>
+                    )}
+                    
+                    {phase === 'phase2B' && (
+                      <>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Hiểu biết & nhận thức</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2B.1'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>5</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Tư duy phản biện</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2B.2'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>5</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Ngôn ngữ & thuật ngữ</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2B.3'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Chiến lược & điều hướng</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2B.4'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>3</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Văn hóa – xã hội</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2B.5'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>3</Typography>
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                          <Typography>Đạo đức & đối thoại</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>{scores['2B.6'] || 0}</Typography>
+                          <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                        </Box>
+                      </>
+                    )}
+                    
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mt: 2, p: 1, background: '#f0f0f0', borderRadius: 1 }}>
+                      <Typography sx={{ fontWeight: 'bold' }}>Tổng điểm giai đoạn</Typography>
+                      <Typography sx={{ textAlign: 'center', fontWeight: 'bold' }}>{phaseTotal}</Typography>
+                      <Typography sx={{ textAlign: 'center', fontWeight: 'bold' }}>{maxScore}</Typography>
+                    </Box>
+                  </Box>
+                );
+              }
+              return null;
+            })}
+            
+            {/* Tổng điểm toàn bộ */}
+            {evaluation.scores && (() => {
+              const totalScore = Object.entries(evaluation.scores)
+                .filter(([phase]) => phase === 'phase1' || phase === 'phase2A' || phase === 'phase2B')
+                .reduce((total, [_, scores]) => {
+                  return total + Object.values(scores).reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+                }, 0);
+              const totalMaxScore = 73; // 25 + 24 + 24
+              
+              return (
+                <Box sx={{ p: 2, background: '#e3f2fd', borderRadius: 2, mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'bold', textAlign: 'center' }}>
+                    TỔNG ĐIỂM TOÀN BỘ: {totalScore} / {totalMaxScore}
+                  </Typography>
+                  <Typography variant="body2" sx={{ textAlign: 'center', mt: 1 }}>
+                    Tỷ lệ đạt: {((totalScore / totalMaxScore) * 100).toFixed(1)}%
+                  </Typography>
+                </Box>
+              );
+            })()}
+            
             <Button
-              variant="outlined"
+              variant="contained"
               startIcon={<DownloadIcon />}
               sx={{ mt: 2, mr: 2 }}
-              onClick={() => setShowExportDialog(true)}
+              onClick={handleDownloadReport}
             >
-              Xuất kết quả ra file
+              Tải Báo Cáo (docx)
             </Button>
+
             <Button
               variant="outlined"
               sx={{ mt: 2 }}
               onClick={async () => {
-                await handleEndSession();
-                setPhase(0);
+                await handleEndSession("Hoàn thành");
+                navigate('/');
               }}
             >
-              Debate mới
+              Về trang chủ
             </Button>
           </Box>
         )}
 
-        <Dialog open={showExportDialog} onClose={() => setShowExportDialog(false)}>
-          <DialogTitle>Xuất kết quả debate</DialogTitle>
-          <DialogContent>Bạn có muốn xuất kết quả debate ra file txt không?</DialogContent>
+        <Dialog
+          open={violationDetected}
+          // Ngăn người dùng đóng dialog
+          disableEscapeKeyDown 
+          onClose={(event, reason) => {
+            if (reason !== 'backdropClick') {
+              // do nothing
+            }
+          }}
+        >
+          <DialogTitle>Phát hiện hành vi không hợp lệ</DialogTitle>
+          <DialogContent>
+            <Typography>
+              Bạn đã chuyển tab hoặc thoát khỏi chế độ toàn màn hình.
+              Phiên debate đã bị kết thúc để đảm bảo tính toàn vẹn.
+            </Typography>
+          </DialogContent>
           <DialogActions>
-            <Button onClick={() => setShowExportDialog(false)}>Hủy</Button>
-            <Button onClick={handleExportResult} variant="contained">Xuất file</Button>
+            <Button 
+              variant="contained" 
+              color="error"
+              onClick={async () => {
+                await handleEndSession("Vi phạm: Thoát khỏi chế độ thi.");
+                navigate('/');
+              }}
+            >
+              Về trang chủ
+            </Button>
           </DialogActions>
         </Dialog>
 

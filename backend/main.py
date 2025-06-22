@@ -1,31 +1,40 @@
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from fastapi import FastAPI, WebSocket, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Any
 import json
-from debate_system import DebateSession, DebateSystem
+import traceback
+from datetime import datetime, timezone
+from debate_system import DebateSession, DebateSystem, DEBATE_CRITERIA
 from fastapi.responses import FileResponse
 from docx import Document
-from docx.shared import Pt
+from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import io
+from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://192.168.0.117:3000", "http://localhost:3000"],
+    allow_origins=[
+        "http://192.168.0.117:3000", 
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://192.168.0.123:3000",
+        "http://192.168.0.123:3001",
+        "http://192.168.0.123:3002"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Store active debate sessions
+# Store active and completed debate sessions
 active_sessions: Dict[str, DebateSession] = {}
+completed_sessions: Dict[str, Dict[str, Any]] = {}
 
 class DebateTeam(BaseModel):
     team_id: str
@@ -50,13 +59,32 @@ class DebateTurn(BaseModel):
 class DebateSummary(BaseModel):
     student_summary: str
 
+class PhaseUpdateRequest(BaseModel):
+    phase: str
+
+class EndSessionPayload(BaseModel):
+    reason: Optional[str] = None
+
 @app.post("/api/debate/start")
 async def start_debate(team: DebateTeam):
     try:
+        # Check if team_id already exists in active or completed sessions
+        if team.team_id in active_sessions or team.team_id in completed_sessions:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Tên đội '{team.team_id}' đã tồn tại. Vui lòng chọn một tên khác."
+            )
+
         session = DebateSession()
-        topic = session.start_debate()
+        topic = session.start_debate(
+            course_code=team.course_code, 
+            members=team.members
+        )
         active_sessions[team.team_id] = session
         
+        # Add team_id to the session object for easier tracking if needed
+        session.team_id = team.team_id
+
         return DebateResponse(
             message="Debate started successfully",
             data={
@@ -64,8 +92,19 @@ async def start_debate(team: DebateTeam):
                 "team_id": team.team_id
             }
         )
+    except HTTPException as http_exc:
+        raise http_exc # Re-raise known HTTP exceptions
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/debate/{team_id}/phase")
+async def update_phase(team_id: str, request: PhaseUpdateRequest):
+    if team_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Debate session not found")
+    session = active_sessions[team_id]
+    session.current_phase = request.phase
+    return {"message": f"Phase updated to {request.phase}"}
 
 @app.post("/api/debate/{team_id}/phase1")
 async def phase1_arguments(team_id: str):
@@ -108,26 +147,54 @@ async def phase3_summary_text(team_id: str, summary: DebateSummary):
 Bạn là AI debate. Dựa trên chủ đề: {session.topic}, lịch sử debate sau (dạng hỏi đáp):\n{turns_text}\nHãy tóm tắt lại quan điểm, luận điểm của bạn (AI) và nêu lý do vì sao bạn xứng đáng chiến thắng. Tóm tắt ngắn gọn, rõ ràng, không giải thích ngoài nội dung tóm tắt.
 """
     ai_response = session.debate_system.model.invoke(ai_prompt)
-    session.ai_summary = ai_response.content.strip()
-    return {"ai_summary": session.ai_summary}
+    ai_content = ai_response.content
+    if isinstance(ai_content, list):
+        session.ai_summary = " ".join(map(str, ai_content)).strip()
+    else:
+        session.ai_summary = str(ai_content).strip()
+    session.chat_history.append({"phase": 3, "role": "ai", "content": f"Summary: {session.ai_summary}"})
+
+    return {"message": "Summaries submitted", "ai_summary": session.ai_summary}
+
+@app.post("/api/debate/{team_id}/phase2/start")
+async def start_phase2(team_id: str):
+    """Generates the first AI question to officially start Phase 2."""
+    if team_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Active session not found")
+    
+    session = active_sessions[team_id]
+    
+    # Chỉ thực hiện nếu chưa có lượt nào
+    if not session.turns:
+        # Generate AI questions based on student's arguments
+        if not session.team_arguments:
+            raise HTTPException(status_code=400, detail="Không tìm thấy luận điểm của sinh viên.")
+            
+        session.phase2_questions() # Tạo và lưu câu hỏi vào session
+        
+        if not session.questions:
+            raise HTTPException(status_code=500, detail="AI không thể tạo câu hỏi.")
+            
+        first_question = session.questions.pop(0)
+        
+        # Thêm lượt đầu tiên do AI khởi xướng
+        session.add_turn(asker="ai", question=first_question, answer=None)
+    
+    return {"message": "Phase 2 started. AI asks first.", "turns": session.turns}
 
 @app.post("/api/debate/{team_id}/phase3")
-async def phase3_summary(team_id: str, args: TeamResponses):
+async def run_phase3(team_id: str):
     if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Debate session not found")
+        raise HTTPException(status_code=404, detail="Active session not found")
+    
     session = active_sessions[team_id]
-    # Lấy tất cả câu trả lời của SV từ session.turns
-    team_responses = [turn['answer'] for turn in session.turns if turn['asker'] == 'student' and turn['answer']]
-    session.responses = team_responses
-    # Lấy tóm tắt từ session
-    student_summary = getattr(session, 'student_summary', "")
-    ai_summary = getattr(session, 'ai_summary', "")
-    # Gọi hàm phase3_summary với đầy đủ tham số
-    evaluation = session.phase3_summary(student_summary=student_summary, ai_summary=ai_summary)
-    return DebateResponse(
-        message="Debate completed",
-        data={"evaluation": evaluation}
-    )
+    session.current_phase = "Phase 4: Evaluation"
+
+    # The core of the debate evaluation
+    evaluation_result = session.evaluate_debate()
+    session.evaluation = evaluation_result
+
+    return {"message": "Debate evaluated successfully", "data": {"evaluation": evaluation_result}}
 
 @app.post("/api/debate/{team_id}/phase2/turn")
 async def phase2_turn(team_id: str, turn: DebateTurn):
@@ -147,7 +214,11 @@ Bạn là AI debate sử dụng phương pháp Socrates. Dựa trên chủ đề
             socrates_prompt += f"\nLượt {t['turn']}: {t['asker']} hỏi: {t['question']} | trả lời: {t['answer']}"
         socrates_prompt += "\nHãy đặt 1 câu hỏi phản biện theo phương pháp Socrates: hỏi ngược, gợi mở, không khẳng định, giúp đối phương tự suy nghĩ, tự phản biện. Không trả lời thay, không giải thích. Chỉ trả về đúng 1 câu hỏi."
         ai_response = session.debate_system.model.invoke(socrates_prompt)
-        next_question = ai_response.content.strip()
+        ai_content = ai_response.content
+        if isinstance(ai_content, list):
+            next_question = " ".join(map(str, ai_content)).strip()
+        else:
+            next_question = str(ai_content).strip()
         session.add_turn("ai", next_question)
     return {"turns": session.turns, "next_question": next_question}
 
@@ -173,53 +244,190 @@ async def get_debate_history(team_id: str):
     return {"chat_history": session.chat_history}
 
 @app.delete("/api/debate/{team_id}/end")
-async def end_debate_session(team_id: str):
+async def end_session(team_id: str, payload: Optional[EndSessionPayload] = None):
+    """Ends a session, saves it with a status, and moves it to completed."""
     if team_id in active_sessions:
-        del active_sessions[team_id]
-    return {"message": "Session ended"}
+        session = active_sessions.pop(team_id)
+        
+        status = "Hoàn thành"
+        if payload and payload.reason:
+            status = payload.reason
+
+        completed_sessions[team_id] = {
+            "team_id": team_id,
+            "topic": session.topic,
+            "members": session.members,
+            "evaluation": session.evaluation,
+            "completed_at": datetime.now().isoformat(),
+            "chat_history": session.chat_history,
+            "status": status,
+        }
+        
+        return {"message": f"Session for team {team_id} has been ended with status: {status}"}
+    
+    raise HTTPException(status_code=404, detail="Active session not found")
+
+@app.delete("/api/admin/history/{team_id}")
+async def delete_history(team_id: str):
+    """Deletes a specific session from the completed sessions history."""
+    if team_id in completed_sessions:
+        del completed_sessions[team_id]
+        return {"message": f"History for team {team_id} has been deleted."}
+    
+    raise HTTPException(status_code=404, detail="Team ID not found in history.")
+
+@app.get("/api/admin/sessions")
+async def get_admin_sessions():
+    """Returns a list of active and completed sessions for the admin dashboard."""
+    active_session_summaries = {}
+    for team_id, session in active_sessions.items():
+        active_session_summaries[team_id] = {
+            "team_id": team_id,
+            "topic": session.topic,
+            "course_code": session.course_code,
+            "members": session.members,
+            "current_phase": session.current_phase,
+            "turns_taken": len(session.turns)
+        }
+    
+    # Sort completed sessions by completion time, newest first
+    sorted_completed_sessions = dict(sorted(
+        completed_sessions.items(), 
+        key=lambda item: item[1]['completed_at'], 
+        reverse=True
+    ))
+
+    return {
+        "active": list(active_session_summaries.values()),
+        "completed": list(sorted_completed_sessions.values()),
+        "criteria": DEBATE_CRITERIA
+    }
 
 @app.get("/api/debate/{team_id}/export_docx")
-async def export_debate_docx(team_id: str):
+async def export_docx(team_id: str):
+    session_data = None
+    if team_id in completed_sessions:
+        session_data = completed_sessions[team_id]
+    elif team_id in active_sessions:
+        # If the session is active but has been evaluated, we can still export it.
+        active_session = active_sessions[team_id]
+        if active_session.evaluation:
+             session_data = {
+                "team_id": active_session.team_id,
+                "topic": active_session.topic,
+                "members": active_session.members,
+                "evaluation": active_session.evaluation,
+                "completed_at": datetime.now().isoformat(),
+                "chat_history": active_session.chat_history
+            }
+
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Completed session with evaluation data not found")
+
+    evaluation = session_data.get("evaluation", {})
+    scores = evaluation.get("scores", {})
+    if not scores: # Check if scores dict is empty
+         raise HTTPException(status_code=404, detail="No scores found to generate the report.")
+
+    feedback = evaluation.get("feedback", "No feedback provided.")
+    
+    document = Document()
+    document.add_heading('Debate Result Details', level=1)
+
+    # --- Basic Info ---
+    document.add_heading('Session Information', level=2)
+    document.add_paragraph(f"Team ID: {session_data.get('team_id', 'N/A')}")
+    document.add_paragraph(f"Topic: {session_data.get('topic', 'N/A')}")
+    document.add_paragraph(f"Members: {', '.join(session_data.get('members', []))}")
+    if session_data.get('completed_at'):
+        completed_time = datetime.fromisoformat(session_data['completed_at']).strftime('%Y-%m-%d %H:%M:%S')
+        document.add_paragraph(f"Completed At: {completed_time}")
+
+    # --- AI Feedback ---
+    document.add_heading('Overall Feedback from AI', level=2)
+    document.add_paragraph(feedback)
+
+    # --- Detailed Scores ---
+    document.add_heading('Detailed Scores', level=2)
+    
+    total_score = 0
+    total_max_score = 0
+
+    for phase_key, criteria_list in DEBATE_CRITERIA.items():
+        phase_scores = scores.get(phase_key, {})
+        phase_name = {
+            "phase1": "Phase 1: Initial Arguments",
+            "phase2A": "Phase 2A: Socrates Questions (Student's ability to answer)",
+            "phase2B": "Phase 2B: Socrates Answers (Student's ability to question)"
+        }.get(phase_key, phase_key)
+
+        document.add_heading(phase_name, level=3)
+        
+        table = document.add_table(rows=1, cols=3)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Criteria'
+        hdr_cells[1].text = 'Score'
+        hdr_cells[2].text = 'Max Score'
+
+        phase_total = 0
+        phase_max_total = 0
+
+        for criterion in criteria_list:
+            score = phase_scores.get(criterion['id'], 0)
+            max_score = criterion['max_score']
+            row_cells = table.add_row().cells
+            row_cells[0].text = criterion['name']
+            row_cells[1].text = str(score)
+            row_cells[2].text = str(max_score)
+            phase_total += score
+            phase_max_total += max_score
+        
+        # Add phase total row
+        total_row = table.add_row().cells
+        total_row[0].text = 'Phase Total'
+        total_row[0].paragraphs[0].runs[0].font.bold = True
+        total_row[1].text = str(phase_total)
+        total_row[1].paragraphs[0].runs[0].font.bold = True
+        total_row[2].text = str(phase_max_total)
+        total_row[2].paragraphs[0].runs[0].font.bold = True
+        
+        total_score += phase_total
+        total_max_score += phase_max_total
+
+    # --- Grand Total ---
+    document.add_heading('Final Score', level=2)
+    document.add_paragraph(f"Grand Total: {total_score} / {total_max_score}")
+
+    # --- Chat History ---
+    document.add_heading('Debate History', level=2)
+    chat_history = session_data.get("chat_history", [])
+    if chat_history:
+        for item in chat_history:
+            document.add_paragraph(f"[{item.get('phase', 'N/A')}] {item.get('role', 'N/A')}: {item.get('content', '')}", style='Intense Quote')
+    else:
+        document.add_paragraph("No chat history was recorded.")
+
+
+    # --- Save to memory and return ---
+    f = io.BytesIO()
+    document.save(f)
+    f.seek(0)
+    
+    return StreamingResponse(f, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers={'Content-Disposition': f'attachment; filename="debate_result_{team_id}.docx"'})
+
+@app.get("/api/debate/{team_id}/info")
+async def get_debate_info(team_id: str):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
     session = active_sessions[team_id]
+    return {
+        "topic": session.topic,
+        "members": session.members,
+        "course_code": session.course_code,
+        "team_id": team_id
+    }
 
-    doc = Document()
-    doc.add_heading('KẾT QUẢ DEBATE AI', 0)
-
-    # Chủ đề
-    doc.add_heading('Chủ đề debate:', level=1)
-    doc.add_paragraph(session.topic)
-
-    # Lý do chủ đề phù hợp
-    doc.add_heading('Lý do chủ đề phù hợp:', level=2)
-    if hasattr(session, 'topic') and isinstance(session.topic, str):
-        topic_lines = session.topic.split('\n')
-        for line in topic_lines[1:]:
-            doc.add_paragraph(line, style='List Bullet')
-
-    # Kết quả chấm điểm
-    doc.add_heading('Kết quả chấm điểm', level=1)
-    if hasattr(session, 'evaluation') and session.evaluation:
-        table = doc.add_table(rows=1, cols=3)
-        hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = 'Tiêu chí'
-        hdr_cells[1].text = 'Team'
-        hdr_cells[2].text = 'AI'
-        for key in session.evaluation['team_score']:
-            row_cells = table.add_row().cells
-            row_cells[0].text = key
-            row_cells[1].text = str(session.evaluation['team_score'][key])
-            row_cells[2].text = str(session.evaluation['ai_score'][key])
-        doc.add_paragraph(f"Người thắng cuộc: {session.evaluation['winner']}")
-
-    # Lịch sử debate
-    doc.add_heading('Lịch sử debate', level=1)
-    if hasattr(session, 'chat_history'):
-        for item in session.chat_history:
-            doc.add_paragraph(f"Phase {item['phase']} - {item['role']}:\n{item['content']}")
-
-    # Lưu file tạm
-    file_path = f"debate_result_{team_id}.docx"
-    doc.save(file_path)
-    return FileResponse(path=file_path, filename=file_path, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document') 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5000, reload=True) 

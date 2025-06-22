@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # Service cho Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: debate-ai-backend
+    restart: always
+    env_file:
+      - ./backend/.env  # Đảm bảo bạn có file .env trong thư mục backend
+    networks:
+      - debate-network
+
+  # Service cho Frontend/Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: debate-ai-frontend
+    restart: always
+    ports:
+      - "80:80"  # Ánh xạ port 80 của container ra port 80 của máy chủ
+    depends_on:
+      - backend  # Đảm bảo backend khởi động trước
+    networks:
+      - debate-network
+
+# Định nghĩa network để các container có thể giao tiếp với nhau
+networks:
+  debate-network:
+    driver: bridge 
