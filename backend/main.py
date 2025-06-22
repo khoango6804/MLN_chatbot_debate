@@ -65,7 +65,7 @@ class PhaseUpdateRequest(BaseModel):
 class EndSessionPayload(BaseModel):
     reason: Optional[str] = None
 
-@app.post("/api/debate/start")
+@app.post("/debate/start")
 async def start_debate(team: DebateTeam):
     try:
         # Check if team_id already exists in active or completed sessions
@@ -98,7 +98,7 @@ async def start_debate(team: DebateTeam):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/debate/{team_id}/phase")
+@app.post("/debate/{team_id}/phase")
 async def update_phase(team_id: str, request: PhaseUpdateRequest):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
@@ -106,7 +106,7 @@ async def update_phase(team_id: str, request: PhaseUpdateRequest):
     session.current_phase = request.phase
     return {"message": f"Phase updated to {request.phase}"}
 
-@app.post("/api/debate/{team_id}/phase1")
+@app.post("/debate/{team_id}/phase1")
 async def phase1_arguments(team_id: str):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
@@ -119,7 +119,7 @@ async def phase1_arguments(team_id: str):
         data={"ai_arguments": ai_arguments}
     )
 
-@app.post("/api/debate/{team_id}/phase2")
+@app.post("/debate/{team_id}/phase2")
 async def phase2_questions(team_id: str, args: TeamArguments):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
@@ -133,7 +133,7 @@ async def phase2_questions(team_id: str, args: TeamArguments):
         data={"questions": questions}
     )
 
-@app.post("/api/debate/{team_id}/phase3/summary")
+@app.post("/debate/{team_id}/phase3/summary")
 async def phase3_summary_text(team_id: str, summary: DebateSummary):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
@@ -156,7 +156,7 @@ Bạn là AI debate. Dựa trên chủ đề: {session.topic}, lịch sử debat
 
     return {"message": "Summaries submitted", "ai_summary": session.ai_summary}
 
-@app.post("/api/debate/{team_id}/phase2/start")
+@app.post("/debate/{team_id}/phase2/start")
 async def start_phase2(team_id: str):
     """Generates the first AI question to officially start Phase 2."""
     if team_id not in active_sessions:
@@ -182,7 +182,7 @@ async def start_phase2(team_id: str):
     
     return {"message": "Phase 2 started. AI asks first.", "turns": session.turns}
 
-@app.post("/api/debate/{team_id}/phase3")
+@app.post("/debate/{team_id}/phase3")
 async def run_phase3(team_id: str):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Active session not found")
@@ -196,7 +196,7 @@ async def run_phase3(team_id: str):
 
     return {"message": "Debate evaluated successfully", "data": {"evaluation": evaluation_result}}
 
-@app.post("/api/debate/{team_id}/phase2/turn")
+@app.post("/debate/{team_id}/phase2/turn")
 async def phase2_turn(team_id: str, turn: DebateTurn):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
@@ -236,14 +236,14 @@ async def websocket_endpoint(websocket: WebSocket, team_id: str):
     except Exception as e:
         await websocket.close()
 
-@app.get("/api/debate/{team_id}/history")
+@app.get("/debate/{team_id}/history")
 async def get_debate_history(team_id: str):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
     session = active_sessions[team_id]
     return {"chat_history": session.chat_history}
 
-@app.delete("/api/debate/{team_id}/end")
+@app.delete("/debate/{team_id}/end")
 async def end_session(team_id: str, payload: Optional[EndSessionPayload] = None):
     """Ends a session, saves it with a status, and moves it to completed."""
     if team_id in active_sessions:
@@ -267,7 +267,7 @@ async def end_session(team_id: str, payload: Optional[EndSessionPayload] = None)
     
     raise HTTPException(status_code=404, detail="Active session not found")
 
-@app.delete("/api/admin/history/{team_id}")
+@app.delete("/admin/history/{team_id}")
 async def delete_history(team_id: str):
     """Deletes a specific session from the completed sessions history."""
     if team_id in completed_sessions:
@@ -276,7 +276,7 @@ async def delete_history(team_id: str):
     
     raise HTTPException(status_code=404, detail="Team ID not found in history.")
 
-@app.get("/api/admin/sessions")
+@app.get("/admin/sessions")
 async def get_admin_sessions():
     """Returns a list of active and completed sessions for the admin dashboard."""
     active_session_summaries = {}
@@ -303,7 +303,7 @@ async def get_admin_sessions():
         "criteria": DEBATE_CRITERIA
     }
 
-@app.get("/api/debate/{team_id}/export_docx")
+@app.get("/debate/{team_id}/export_docx")
 async def export_docx(team_id: str):
     session_data = None
     if team_id in completed_sessions:
@@ -416,7 +416,7 @@ async def export_docx(team_id: str):
     
     return StreamingResponse(f, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers={'Content-Disposition': f'attachment; filename="debate_result_{team_id}.docx"'})
 
-@app.get("/api/debate/{team_id}/info")
+@app.get("/debate/{team_id}/info")
 async def get_debate_info(team_id: str):
     if team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
