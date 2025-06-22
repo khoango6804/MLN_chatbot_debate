@@ -5,6 +5,7 @@ from typing import List, Dict, Optional, Any
 import json
 import traceback
 from datetime import datetime, timezone
+from urllib.parse import unquote
 from debate_system import DebateSession, DebateSystem, DEBATE_CRITERIA
 from fastapi.responses import FileResponse
 from docx import Document
@@ -100,30 +101,33 @@ async def start_debate(team: DebateTeam):
 
 @app.get("/debate/{team_id}/info")
 async def get_debate_info(team_id: str):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     return {
         "topic": session.topic,
         "members": session.members,
         "course_code": session.course_code,
-        "team_id": team_id
+        "team_id": decoded_team_id
     }
 
 @app.post("/debate/{team_id}/phase")
 async def update_phase(team_id: str, request: PhaseUpdateRequest):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     session.current_phase = request.phase
     return {"message": f"Phase updated to {request.phase}"}
 
 @app.post("/debate/{team_id}/phase1")
 async def phase1_arguments(team_id: str):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
     
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     ai_arguments = session.phase1_arguments()
     
     return DebateResponse(
@@ -133,10 +137,11 @@ async def phase1_arguments(team_id: str):
 
 @app.post("/debate/{team_id}/phase2")
 async def phase2_questions(team_id: str, args: TeamArguments):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
     
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     session.team_arguments = args.team_arguments
     questions = session.phase2_questions()
     
@@ -147,9 +152,10 @@ async def phase2_questions(team_id: str, args: TeamArguments):
 
 @app.post("/debate/{team_id}/phase3/summary")
 async def phase3_summary_text(team_id: str, summary: DebateSummary):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     session.student_summary = summary.student_summary
     # Sinh tóm tắt AI dựa trên lịch sử debate
     turns_text = "\n".join([
@@ -171,10 +177,11 @@ Bạn là AI debate. Dựa trên chủ đề: {session.topic}, lịch sử debat
 @app.post("/debate/{team_id}/phase2/start")
 async def start_phase2(team_id: str):
     """Generates the first AI question to officially start Phase 2."""
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Active session not found")
     
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     
     # Chỉ thực hiện nếu chưa có lượt nào
     if not session.turns:
@@ -196,10 +203,11 @@ async def start_phase2(team_id: str):
 
 @app.post("/debate/{team_id}/phase3")
 async def run_phase3(team_id: str):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Active session not found")
     
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     session.current_phase = "Phase 4: Evaluation"
 
     # The core of the debate evaluation
@@ -210,9 +218,10 @@ async def run_phase3(team_id: str):
 
 @app.post("/debate/{team_id}/phase2/turn")
 async def phase2_turn(team_id: str, turn: DebateTurn):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     # Lưu lượt debate
     session.add_turn(turn.asker, turn.question, turn.answer)
     # Nếu đến lượt AI hỏi, sinh câu hỏi Socrates mới
@@ -250,23 +259,25 @@ async def websocket_endpoint(websocket: WebSocket, team_id: str):
 
 @app.get("/debate/{team_id}/history")
 async def get_debate_history(team_id: str):
-    if team_id not in active_sessions:
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Debate session not found")
-    session = active_sessions[team_id]
+    session = active_sessions[decoded_team_id]
     return {"chat_history": session.chat_history}
 
 @app.delete("/debate/{team_id}/end")
 async def end_session(team_id: str, payload: Optional[EndSessionPayload] = None):
     """Ends a session, saves it with a status, and moves it to completed."""
-    if team_id in active_sessions:
-        session = active_sessions.pop(team_id)
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id in active_sessions:
+        session = active_sessions.pop(decoded_team_id)
         
         status = "Hoàn thành"
         if payload and payload.reason:
             status = payload.reason
 
-        completed_sessions[team_id] = {
-            "team_id": team_id,
+        completed_sessions[decoded_team_id] = {
+            "team_id": decoded_team_id,
             "topic": session.topic,
             "members": session.members,
             "evaluation": session.evaluation,
@@ -275,16 +286,17 @@ async def end_session(team_id: str, payload: Optional[EndSessionPayload] = None)
             "status": status,
         }
         
-        return {"message": f"Session for team {team_id} has been ended with status: {status}"}
+        return {"message": f"Session for team {decoded_team_id} has been ended with status: {status}"}
     
     raise HTTPException(status_code=404, detail="Active session not found")
 
 @app.delete("/admin/history/{team_id}")
 async def delete_history(team_id: str):
     """Deletes a specific session from the completed sessions history."""
-    if team_id in completed_sessions:
-        del completed_sessions[team_id]
-        return {"message": f"History for team {team_id} has been deleted."}
+    decoded_team_id = unquote(team_id)
+    if decoded_team_id in completed_sessions:
+        del completed_sessions[decoded_team_id]
+        return {"message": f"History for team {decoded_team_id} has been deleted."}
     
     raise HTTPException(status_code=404, detail="Team ID not found in history.")
 
@@ -317,12 +329,13 @@ async def get_admin_sessions():
 
 @app.get("/debate/{team_id}/export_docx")
 async def export_docx(team_id: str):
+    decoded_team_id = unquote(team_id)
     session_data = None
-    if team_id in completed_sessions:
-        session_data = completed_sessions[team_id]
-    elif team_id in active_sessions:
+    if decoded_team_id in completed_sessions:
+        session_data = completed_sessions[decoded_team_id]
+    elif decoded_team_id in active_sessions:
         # If the session is active but has been evaluated, we can still export it.
-        active_session = active_sessions[team_id]
+        active_session = active_sessions[decoded_team_id]
         if active_session.evaluation:
              session_data = {
                 "team_id": active_session.team_id,
@@ -426,7 +439,7 @@ async def export_docx(team_id: str):
     document.save(f)
     f.seek(0)
     
-    return StreamingResponse(f, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers={'Content-Disposition': f'attachment; filename="debate_result_{team_id}.docx"'})
+    return StreamingResponse(f, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers={'Content-Disposition': f'attachment; filename="debate_result_{decoded_team_id}.docx"'})
 
 if __name__ == "__main__":
     import uvicorn
