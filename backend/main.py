@@ -98,6 +98,18 @@ async def start_debate(team: DebateTeam):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/debate/{team_id}/info")
+async def get_debate_info(team_id: str):
+    if team_id not in active_sessions:
+        raise HTTPException(status_code=404, detail="Debate session not found")
+    session = active_sessions[team_id]
+    return {
+        "topic": session.topic,
+        "members": session.members,
+        "course_code": session.course_code,
+        "team_id": team_id
+    }
+
 @app.post("/debate/{team_id}/phase")
 async def update_phase(team_id: str, request: PhaseUpdateRequest):
     if team_id not in active_sessions:
@@ -415,18 +427,6 @@ async def export_docx(team_id: str):
     f.seek(0)
     
     return StreamingResponse(f, media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document', headers={'Content-Disposition': f'attachment; filename="debate_result_{team_id}.docx"'})
-
-@app.get("/debate/{team_id}/info")
-async def get_debate_info(team_id: str):
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Debate session not found")
-    session = active_sessions[team_id]
-    return {
-        "topic": session.topic,
-        "members": session.members,
-        "course_code": session.course_code,
-        "team_id": team_id
-    }
 
 if __name__ == "__main__":
     import uvicorn
