@@ -21,22 +21,46 @@ const Navbar = () => {
     <AppBar 
       position="static" 
       sx={{
-        background: 'rgba(255, 255, 255, 0.1)',
-        backdropFilter: 'blur(20px)',
-        WebkitBackdropFilter: 'blur(20px)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)'
+        background: 'linear-gradient(90deg, #7ecbff 0%, #007AFF 100%)',
+        color: 'white',
+        boxShadow: '0 4px 20px rgba(0,122,255,0.10)'
       }}
     >
       <Container maxWidth="lg">
         <Toolbar sx={{ px: { xs: 0 } }}>
-          {/* Logo */}
+          {/* Logo Section */}
           <Box sx={{ display: 'flex', alignItems: 'center', mr: 4 }}>
-            <School sx={{ 
-              fontSize: 32, 
-              color: 'white',
-              mr: 1
-            }} />
+            {/* FPT Logo - hiển thị ở tất cả trang */}
+            <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }} className="logo-container">
+              <img
+                src="/fpt_logo.png"
+                alt="FPT University Logo"
+                className="fpt-logo"
+                style={{ 
+                  height: 36, 
+                  width: 'auto', 
+                  objectFit: 'contain'
+                }}
+              />
+            </Box>
+            
+            {/* Soft Skills Logo */}
+            <a href="https://www.facebook.com/SSC.FPTU.HCM" target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }}>
+              <img 
+                src="/softskills_logo.png" 
+                alt="Soft Skills Department Logo" 
+                style={{ 
+                  maxWidth: 36, 
+                  height: 36, 
+                  marginRight: 6, 
+                  transition: 'transform 0.2s, box-shadow 0.2s', 
+                  boxShadow: '0 2px 8px rgba(0,122,255,0.10)',
+                  borderRadius: '50%'
+                }} 
+                onMouseOver={e => { e.currentTarget.style.transform = 'scale(1.08)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,122,255,0.18)'; }}
+                onMouseOut={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,122,255,0.10)'; }}
+              />
+            </a>
             <Typography
               variant="h6"
               component={RouterLink}
@@ -117,12 +141,13 @@ const Navbar = () => {
               fontWeight: 600,
               boxShadow: '0 4px 15px rgba(0, 122, 255, 0.3)',
               '&:hover': {
-                transform: 'translateY(-2px)',
+                transform: 'translateY(-2px) scale(1.04)',
                 boxShadow: '0 8px 25px rgba(0, 122, 255, 0.4)',
                 background: 'linear-gradient(135deg, #0056CC 0%, #4A4AC4 100%)'
               },
               transition: 'all 0.3s ease'
             }}
+            disableRipple={false}
           >
             Admin
           </Button>

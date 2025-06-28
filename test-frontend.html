@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Backend Connection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #7ecbff 0%, #007AFF 100%);
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #007AFF;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 10px 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .result {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .link {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 5px;
+        }
+        .link:hover {
+            background: #218838;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AI Debate System - Test Interface</h1>
+        
+        <div class="status">
+            <h3>🚀 Available Services:</h3>
+            <p><strong>Backend API:</strong> http://206.189.40.105:5000/api</p>
+            <p><strong>React Frontend:</strong> http://206.189.40.105:3001</p>
+            <p><strong>Test Interface:</strong> http://206.189.40.105:8080/test-frontend.html</p>
+        </div>
+
+        <h3>Quick Access:</h3>
+        <a href="http://206.189.40.105:3001" target="_blank" class="link">🎯 Open React App</a>
+        <a href="http://206.189.40.105:3001/admin" target="_blank" class="link">👨‍💼 Admin Dashboard</a>
+        
+        <h3>Backend API Tests:</h3>
+        <button onclick="testBackend()">Test Backend API</button>
+        <button onclick="createTestSession()">Create Test Session</button>
+        <button onclick="getActiveSessions()">Get Active Sessions</button>
+        <button onclick="testPhase1()">Test Phase 1 (Get AI Arguments)</button>
+        
+        <div id="result"></div>
+        
+        <h3>📋 Instructions:</h3>
+        <ol>
+            <li><strong>Test Backend:</strong> Click "Test Backend API" to verify API connectivity</li>
+            <li><strong>Create Session:</strong> Click "Create Test Session" to start a new debate session</li>
+            <li><strong>Use React App:</strong> Click "Open React App" to use the full frontend interface</li>
+            <li><strong>Admin Access:</strong> Click "Admin Dashboard" to view all sessions and manage system</li>
+        </ol>
+        
+        <h3>🔧 System Status:</h3>
+        <div id="system-status">
+            <p>Checking system status...</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://206.189.40.105:5000/api';
+        let lastCreatedTeamId = null;
+
+        async function makeRequest(url, options = {}) {
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const text = await response.text();
+                return {
+                    ok: response.ok,
+                    status: response.status,
+                    data: text ? JSON.parse(text) : null
+                };
+            } catch (error) {
+                return {
+                    ok: false,
+                    error: error.message
+                };
+            }
+        }
+
+        async function testBackend() {
+            showResult('Testing backend connection...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/admin/sessions`);
+            
+            if (result.ok) {
+                showResult(`✅ Backend Connected Successfully!\n\n${JSON.stringify(result.data, null, 2)}`, 'success');
+            } else {
+                showResult(`❌ Backend Connection Failed\n\nError: ${result.error || result.status}`, 'error');
+            }
+        }
+
+        async function createTestSession() {
+            showResult('Creating test session...', 'info');
+            
+            const teamId = `test-${Date.now()}`;
+            
+            const result = await makeRequest(`${API_BASE}/debate/start`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    team_id: teamId,
+                    members: ['Test Student'],
+                    course_code: 'MLN111'
+                })
+            });
+            
+            if (result.ok) {
+                lastCreatedTeamId = teamId;
+                showResult(`✅ Session Created Successfully!\n\nTeam ID: ${teamId}\nTopic: ${result.data.data.topic}\n\nYou can now use this Team ID in the React app.`, 'success');
+            } else {
+                showResult(`❌ Create Session Failed\n\nHTTP ${result.status}: ${JSON.stringify(result.data || result.error)}`, 'error');
+            }
+        }
+
+        async function getActiveSessions() {
+            showResult('Getting active sessions...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/admin/sessions`);
+            
+            if (result.ok) {
+                const activeCount = result.data.active ? result.data.active.length : 0;
+                const completedCount = result.data.completed ? result.data.completed.length : 0;
+                
+                showResult(`✅ Sessions Retrieved!\n\nActive Sessions: ${activeCount}\nCompleted Sessions: ${completedCount}\n\n${JSON.stringify(result.data, null, 2)}`, 'success');
+            } else {
+                showResult(`❌ Get Sessions Failed\n\nError: ${result.error || result.status}`, 'error');
+            }
+        }
+
+        async function testPhase1() {
+            if (!lastCreatedTeamId) {
+                showResult('❌ Please create a test session first!', 'error');
+                return;
+            }
+            
+            showResult('Testing Phase 1 (AI Arguments)...', 'info');
+            
+            const result = await makeRequest(`${API_BASE}/debate/${lastCreatedTeamId}/phase1`, {
+                method: 'POST'
+            });
+            
+            if (result.ok) {
+                showResult(`✅ Phase 1 Success!\n\nAI Arguments:\n${JSON.stringify(result.data.data.ai_arguments, null, 2)}`, 'success');
+            } else {
+                showResult(`❌ Phase 1 Failed\n\nError: ${JSON.stringify(result.data || result.error)}`, 'error');
+            }
+        }
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = message;
+            resultDiv.className = `result ${type}`;
+        }
+
+        // Check system status on load
+        async function checkSystemStatus() {
+            const statusDiv = document.getElementById('system-status');
+            
+            try {
+                const backendResult = await makeRequest(`${API_BASE}/admin/sessions`);
+                const reactResult = await fetch('http://206.189.40.105:3001', { mode: 'no-cors' });
+                
+                let status = '';
+                status += backendResult.ok ? '✅ Backend API: Online\n' : '❌ Backend API: Offline\n';
+                status += '✅ React Frontend: Online (assumed)\n';
+                status += '✅ Test Interface: Online\n';
+                
+                statusDiv.innerHTML = `<pre>${status}</pre>`;
+            } catch (error) {
+                statusDiv.innerHTML = `<pre>❌ Error checking system status: ${error.message}</pre>`;
+            }
+        }
+
+        // Run system check on page load
+        window.onload = checkSystemStatus;
+    </script>
+</body>
+</html> 

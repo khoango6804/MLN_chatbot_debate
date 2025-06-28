@@ -6,12 +6,10 @@ export const useLayout = () => useContext(LayoutContext);
 
 export const LayoutProvider = ({ children }) => {
     const [showHeader, setShowHeader] = useState(true);
-
     const value = {
         showHeader,
         setShowHeader,
     };
-
     return (
         <LayoutContext.Provider value={value}>
             {children}

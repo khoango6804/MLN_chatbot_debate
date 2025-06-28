@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 
 # ----- Giai đoạn 1: Build ứng dụng React -----
-FROM node:18-alpine as build
+FROM node:18 as build
 
 # Thiết lập thư mục làm việc
 WORKDIR /app
 
 # Sao chép package.json và package-lock.json
-COPY package.json package-lock.json ./
+COPY package.json* ./
 
 # Cài đặt các dependencies
 RUN npm install
@@ -19,7 +19,7 @@ COPY . .
 RUN npm run build
 
 # ----- Giai đoạn 2: Serve bằng Nginx -----
-FROM nginx:1.21.0-alpine
+FROM nginx:alpine
 
 # Sao chép các file tĩnh đã được build từ giai đoạn 1
 COPY --from=build /app/build /usr/share/nginx/html

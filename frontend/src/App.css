@@ -1,1 +1,55 @@
-/* You can add component-specific styles here if needed */ 
+/* You can add component-specific styles here if needed */
+
+/* Logo FPT tách nền */
+.fpt-logo {
+  background: transparent !important;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
+  transition: all 0.3s ease;
+}
+
+.fpt-logo:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.15));
+}
+
+/* Logo animations */
+@keyframes logoFloat {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.logo-float {
+  animation: logoFloat 3s ease-in-out infinite;
+}
+
+/* Gradient text effects */
+.gradient-text {
+  background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth transitions for all logos */
+.logo-container {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.logo-container:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* Responsive logo adjustments */
+@media (max-width: 768px) {
+  .fpt-logo {
+    height: 40px !important;
+  }
+  
+  .logo-container {
+    margin: 0 8px;
+  }
+} 

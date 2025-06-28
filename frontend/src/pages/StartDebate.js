@@ -15,7 +15,8 @@ import {
   Grid,
   Alert,
   CircularProgress,
-  Chip
+  Chip,
+  Snackbar
 } from '@mui/material';
 import {
   School,
@@ -23,22 +24,29 @@ import {
   Timer,
   PlayArrow
 } from '@mui/icons-material';
+import axios from 'axios';
+import { useTheme } from '@mui/material/styles';
+import MuiAlert from '@mui/material/Alert';
 
 const StartDebate = () => {
   const navigate = useNavigate();
+  const theme = useTheme();
   const [formData, setFormData] = useState({
     teamName: '',
     member1: '',
     member2: '',
     member3: '',
+    member4: '',
+    member5: '',
     course: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   const courses = [
-    { value: 'MLN111', label: 'MLN111 - Logic học đại cương' },
-    { value: 'MLN122', label: 'MLN122 - Logic học ứng dụng' }
+    { value: 'MLN111', label: 'MLN111 - Triết học Marx - Lenin' },
+    { value: 'MLN122', label: 'MLN122 - Kinh tế Chính trị Marx - Lenin' }
   ];
 
   const handleInputChange = (e) => {
@@ -49,42 +57,22 @@ const StartDebate = () => {
     }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setLoading(true);
-
-    // Validate form
-    if (!formData.teamName || !formData.member1 || !formData.member2 || !formData.member3 || !formData.course) {
-      setError('Vui lòng điền đầy đủ thông tin');
-      setLoading(false);
-      return;
-    }
-
+    setError(null);
     try {
-      const payload = {
+      const response = await axios.post("http://localhost:5000/api/debate/start", {
         team_id: formData.teamName,
-        members: [formData.member1, formData.member2, formData.member3],
-        course_code: formData.course
-      };
-
-      const response = await fetch('http://localhost:5000/api/debate/start', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
+        members: [formData.member1, formData.member2, formData.member3, formData.member4, formData.member5].map(m => m.trim()),
+        course_code: formData.course,
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        navigate(`/debate/${data.data.team_id}`);
-      } else {
-        const errorData = await response.json();
-        setError(errorData.error || 'Có lỗi xảy ra khi tạo phiên tranh luận');
-      }
+      const { team_id } = response.data.data;
+      setSnackbar({ open: true, message: 'Tạo debate thành công!', severity: 'success' });
+      setTimeout(() => navigate(`/debate/${team_id}`), 1200);
     } catch (err) {
-      setError('Không thể kết nối đến máy chủ');
+      setError(err.response?.data?.detail || 'Failed to start debate. Please try again.');
+      setSnackbar({ open: true, message: err.response?.data?.detail || 'Tạo debate thất bại!', severity: 'error' });
     } finally {
       setLoading(false);
     }
@@ -111,7 +99,7 @@ const StartDebate = () => {
   return (
     <Box sx={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'linear-gradient(135deg, #7ecbff 0%, #007AFF 100%)',
       position: 'relative',
       overflow: 'hidden'
     }}>
@@ -139,7 +127,7 @@ const StartDebate = () => {
 
       <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1, py: 4 }}>
         {/* Header */}
-        <Box sx={{ textAlign: 'center', mb: 6, color: 'white' }}>
+        <Box sx={{ textAlign: 'center', mb: 6, color: theme.palette.text.primary }}>
           <Typography
             variant="h2"
             sx={{
@@ -148,12 +136,13 @@ const StartDebate = () => {
               background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
+              backgroundClip: 'text',
+              color: theme.palette.text.primary
             }}
           >
             Bắt đầu tranh luận
           </Typography>
-          <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
+          <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300, color: theme.palette.text.secondary }}>
             Điền thông tin đội để bắt đầu cuộc thi
           </Typography>
         </Box>
@@ -162,14 +151,15 @@ const StartDebate = () => {
           {/* Form Section */}
           <Grid item xs={12} lg={7}>
             <Card sx={{
-              background: 'rgba(255, 255, 255, 0.95)',
+              background: theme.palette.background.paper,
               borderRadius: '24px',
               backdropFilter: 'blur(20px)',
               border: '1px solid rgba(255, 255, 255, 0.2)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+              color: theme.palette.text.primary
             }}>
               <CardContent sx={{ p: 4 }}>
-                <Typography variant="h4" sx={{ mb: 3, fontWeight: 600, color: '#1d1d1f' }}>
+                <Typography variant="h4" sx={{ mb: 3, fontWeight: 600, color: theme.palette.text.primary }}>
                   Thông tin đội
                 </Typography>
 
@@ -244,6 +234,46 @@ const StartDebate = () => {
                     name="member3"
                     label="Thành viên 3"
                     value={formData.member3}
+                    onChange={handleInputChange}
+                    fullWidth
+                    required
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: '12px',
+                        '&:hover fieldset': {
+                          borderColor: '#007AFF',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#007AFF',
+                        },
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    name="member4"
+                    label="Thành viên 4"
+                    value={formData.member4}
+                    onChange={handleInputChange}
+                    fullWidth
+                    required
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: '12px',
+                        '&:hover fieldset': {
+                          borderColor: '#007AFF',
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#007AFF',
+                        },
+                      },
+                    }}
+                  />
+
+                  <TextField
+                    name="member5"
+                    label="Thành viên 5"
+                    value={formData.member5}
                     onChange={handleInputChange}
                     fullWidth
                     required
@@ -407,6 +437,18 @@ const StartDebate = () => {
           </Grid>
         </Grid>
       </Container>
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <MuiAlert elevation={6} variant="filled" severity={snackbar.severity} sx={{ borderRadius: 2 }}>
+          {snackbar.message}
+        </MuiAlert>
+      </Snackbar>
     </Box>
   );
 };

@@ -20,9 +20,14 @@ import {
   Group,
   Security
 } from '@mui/icons-material';
+import AOS from 'aos';
+import 'aos/dist/aos.css';
+import { useTheme } from '@mui/material/styles';
 
 const Home = () => {
   const navigate = useNavigate();
+  const theme = useTheme();
+  React.useEffect(() => { AOS.init({ duration: 800, once: true }); }, []);
 
   const features = [
     {
@@ -48,7 +53,7 @@ const Home = () => {
   ];
 
   const rules = [
-    "Mỗi đội có 3 thành viên",
+    "Mỗi đội có 5 thành viên",
     "Thời gian chuẩn bị: 10 phút",
     "Thời gian làm bài: 5 phút", 
     "Thời gian tranh luận: 7 phút",
@@ -58,10 +63,69 @@ const Home = () => {
   return (
     <Box sx={{ 
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      background: 'linear-gradient(135deg, #7ecbff 0%, #007AFF 100%)',
       position: 'relative',
       overflow: 'hidden'
     }}>
+      {/* Logo Section */}
+      <Box sx={{ textAlign: 'center', pt: 6 }}>
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          gap: 4, 
+          mb: 3,
+          flexWrap: 'wrap'
+        }}>
+          {/* FPT Logo */}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.2))',
+            transition: 'transform 0.3s ease',
+            '&:hover': { transform: 'scale(1.05)' }
+          }}>
+            <img 
+              src="/fpt_logo.png" 
+              alt="FPT University Logo" 
+              style={{ 
+                height: 120, 
+                width: 'auto', 
+                objectFit: 'contain'
+              }} 
+            />
+          </Box>
+          
+          {/* Elegant Divider */}
+          <Box sx={{ 
+            width: 3, 
+            height: 80, 
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.6) 100%)',
+            borderRadius: 2,
+            display: { xs: 'none', sm: 'block' }
+          }} />
+          
+          {/* Soft Skills Logo */}
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.2))',
+            transition: 'transform 0.3s ease',
+            '&:hover': { transform: 'scale(1.05)' }
+          }}>
+            <img 
+              src="/softskills_logo.png" 
+              alt="Soft Skills Department Logo" 
+              style={{ 
+                height: 120, 
+                width: 'auto', 
+                objectFit: 'contain',
+                borderRadius: '50%'
+              }} 
+            />
+          </Box>
+        </Box>
+      </Box>
       {/* Background decoration */}
       <Box sx={{
         position: 'absolute',
@@ -86,25 +150,17 @@ const Home = () => {
 
       <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1 }}>
         {/* Hero Section */}
-        <Box sx={{ 
+        <Box data-aos="fade-down" sx={{ 
           textAlign: 'center', 
           py: 8,
-          color: 'white'
+          color: theme.palette.text.primary
         }}>
           <Typography 
-            variant="h1" 
-            sx={{ 
-              fontSize: { xs: '2.5rem', md: '4rem' },
-              fontWeight: 700,
-              mb: 2,
-              background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}
-            className="fade-in"
+            variant="h2"
+            align="center"
+            sx={{ fontWeight: 700, mb: 2, color: 'white', textShadow: '0 2px 8px rgba(0,0,0,0.10)' }}
           >
-            AI Debate System
+            AI Debate System: Horizon Expanders
           </Typography>
           <Typography 
             variant="h5" 
@@ -147,13 +203,13 @@ const Home = () => {
         </Box>
 
         {/* Features Section */}
-        <Box sx={{ py: 8 }}>
+        <Box data-aos="fade-up" sx={{ py: 8 }}>
           <Typography 
             variant="h3" 
             sx={{ 
               textAlign: 'center', 
               mb: 6,
-              color: 'white',
+              color: theme.palette.text.primary,
               fontWeight: 600
             }}
           >
@@ -161,16 +217,18 @@ const Home = () => {
           </Typography>
           <Grid container spacing={4}>
             {features.map((feature, index) => (
-              <Grid item xs={12} sm={6} md={3} key={index}>
+              <Grid item xs={12} sm={6} md={3} key={index} data-aos="zoom-in" data-aos-delay={index * 100}>
                 <Card 
                   sx={{ 
-                    background: 'rgba(255, 255, 255, 0.95)',
+                    background: theme.palette.background.paper,
                     borderRadius: '20px',
                     height: '100%',
+                    color: theme.palette.text.primary,
                     transition: 'all 0.3s ease',
                     '&:hover': {
-                      transform: 'translateY(-8px)',
-                      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)'
+                      transform: 'translateY(-8px) scale(1.04)',
+                      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
+                      zIndex: 2
                     }
                   }}
                   className="fade-in"
@@ -179,10 +237,10 @@ const Home = () => {
                     <Box sx={{ mb: 2 }}>
                       {feature.icon}
                     </Box>
-                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 600 }}>
+                    <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, color: theme.palette.text.primary }}>
                       {feature.title}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" sx={{ color: theme.palette.text.secondary }}>
                       {feature.description}
                     </Typography>
                   </CardContent>
@@ -193,66 +251,59 @@ const Home = () => {
         </Box>
 
         {/* Rules Section */}
-        <Box sx={{ py: 8 }}>
+        <Box data-aos="fade-up" sx={{ py: 8 }}>
           <Card 
             sx={{ 
-              background: 'rgba(255, 255, 255, 0.95)',
+              background: theme.palette.background.paper,
               borderRadius: '20px',
-              p: 4
-            }}
-            className="fade-in"
-          >
-            <Typography 
-              variant="h4" 
-              sx={{ 
-                textAlign: 'center', 
-                mb: 4,
-                fontWeight: 600,
-                color: '#1d1d1f'
-              }}
-            >
-              Thể lệ cuộc thi
-            </Typography>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={6}>
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Group sx={{ color: '#007AFF' }} />
-                    Cấu trúc đội
+              color: theme.palette.text.primary,
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
+            }}>
+            <CardContent>
+              <Typography variant="h5" sx={{ mb: 2, fontWeight: 600, color: theme.palette.text.primary }}>
+                Lưu ý quan trọng
+              </Typography>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Group sx={{ color: '#007AFF' }} />
+                      Cấu trúc đội
+                    </Typography>
+                    <Typography variant="body1" color="text.secondary">
+                      Mỗi đội tham gia gồm 5 thành viên, cùng nhau chuẩn bị và thực hiện phần tranh luận.
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Security sx={{ color: '#5856D6' }} />
+                      Bảo mật
+                    </Typography>
+                    <Typography variant="body1" color="text.secondary">
+                      Hệ thống có các biện pháp chống gian lận như chặn copy-paste và giám sát màn hình.
+                    </Typography>
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    Thời gian các giai đoạn:
                   </Typography>
-                  <Typography variant="body1" color="text.secondary">
-                    Mỗi đội tham gia gồm 3 thành viên, cùng nhau chuẩn bị và thực hiện phần tranh luận.
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Security sx={{ color: '#5856D6' }} />
-                    Bảo mật
-                  </Typography>
-                  <Typography variant="body1" color="text.secondary">
-                    Hệ thống có các biện pháp chống gian lận như chặn copy-paste và giám sát màn hình.
-                  </Typography>
-                </Box>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {rules.map((rule, index) => (
+                      <Chip
+                        key={index}
+                        label={rule}
+                        sx={{
+                          background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
+                          border: '1px solid rgba(0, 122, 255, 0.1)',
+                          fontWeight: 500
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Grid>
               </Grid>
-              <Grid item xs={12} md={6}>
-                <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-                  Thời gian các giai đoạn:
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {rules.map((rule, index) => (
-                    <Chip
-                      key={index}
-                      label={rule}
-                      sx={{
-                        background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
-                        border: '1px solid rgba(0, 122, 255, 0.1)',
-                        fontWeight: 500
-                      }}
-                    />
-                  ))}
-                </Box>
-              </Grid>
-            </Grid>
+            </CardContent>
           </Card>
         </Box>
 

@@ -10,6 +10,10 @@ services:
     restart: always
     env_file:
       - ./backend/.env  # Đảm bảo bạn có file .env trong thư mục backend
+    # Bật access log để theo dõi tất cả các request đến
+    command: gunicorn -w 1 -k uvicorn.workers.UvicornWorker --access-logfile - main:app -b 0.0.0.0:8000
+    ports:
+      - "5000:8000"
     networks:
       - debate-network
 
@@ -18,10 +22,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: debate-frontend
     container_name: debate-ai-frontend
     restart: always
     ports:
       - "80:80"  # Ánh xạ port 80 của container ra port 80 của máy chủ
+    volumes:
+      - ./frontend/build:/usr/share/nginx/html
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - backend  # Đảm bảo backend khởi động trước
     networks:

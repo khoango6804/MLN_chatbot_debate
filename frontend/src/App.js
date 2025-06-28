@@ -14,8 +14,15 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import './App.css';
 
+// A component to conditionally render Navbar based on context
+const AppNavbar = () => {
+  const { showHeader } = useLayout();
+  return showHeader ? <Navbar /> : null;
+};
+
 const theme = createTheme({
   palette: {
+    mode: 'light',
     primary: {
       main: '#1976d2',
     },
@@ -24,12 +31,6 @@ const theme = createTheme({
     },
   },
 });
-
-// A component to conditionally render Navbar based on context
-const AppNavbar = () => {
-  const { showHeader } = useLayout();
-  return showHeader ? <Navbar /> : null;
-};
 
 function App() {
   return (
