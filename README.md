@@ -923,19 +923,18 @@ Any other context or screenshots
 
 | Name | Role | Specialization | GitHub |
 |------|------|----------------|--------|
-| **Ngô Quốc Anh Khoa** | *Team Lead & Full-Stack Developer* | System Architecture, AI Integration | [@anhkhoango](https://github.com/anhkhoango) |
-| **Văn Hồng Bảo Trân** | *Frontend Lead & UI/UX Designer* | React Development, Design Systems | [@baotran](https://github.com/baotran) |
-| **Trần Huy Anh** | *Backend Developer* | API Development, Database Design | [@huyanh](https://github.com/huyanh) |
-| **Nguyễn Xuân An** | *DevOps Engineer* | Deployment, Infrastructure | [@xuanan](https://github.com/xuanan) |
-| **Vũ Anh Khôi** | *AI Specialist* | Machine Learning, NLP Integration | [@anhkhoi](https://github.com/anhkhoi) |
-| **Nguyễn Lê Hoàng Phúc** | *Frontend Developer* | Component Development, Testing | [@hoangphuc](https://github.com/hoangphuc) |
-| **Nguyễn Song Châu Thịnh** | *Backend Developer* | API Security, Authentication | [@chauthinh](https://github.com/chauthinh) |
-| **Nguyễn Hữu Dương** | *Quality Assurance* | Testing, Documentation | [@huuduong](https://github.com/huuduong) |
-| **Trần Đình Gia Bảo** | *Data Analyst* | Analytics, Performance Monitoring | [@giabao](https://github.com/giabao) |
+| **Ngô Quốc Anh Khoa** | *Team Leader & Full-Stack Developer* | System Architecture, AI Integration |
+| **Văn Hồng Bảo Trân** | *Frontend Lead & UI/UX Designer* | React Development, Design Systems | 
+| **Trần Huy Anh** | *Backend Developer* | API Development, Database Design |
+| **Nguyễn Xuân An** | *DevOps Engineer* | Deployment, Infrastructure | 
+| **Vũ Anh Khôi** | *AI Specialist* | Machine Learning, NLP Integration |
+| **Nguyễn Lê Hoàng Phúc** | *Frontend Developer* | Component Development, Testing |
+| **Nguyễn Song Châu Thịnh** | *Backend Developer* | API Security, Authentication |
+| **Nguyễn Hữu Dương** | *Quality Assurance* | Testing, Documentation | 
+| **Trần Đình Gia Bảo** | *Data Analyst* | Analytics, Performance Monitoring | 
 
 ### **🏢 Institution**
 **FPT University Ho Chi Minh City** - *Soft Skills Department*
-- **Address**: 686 Nguyen Huu Tho, District 7, Ho Chi Minh City, Vietnam
 - **Website**: [fpt.edu.vn](https://fpt.edu.vn)
 - **Department**: [Soft Skills Center](https://www.facebook.com/SSC.FPTU.HCM)
 
