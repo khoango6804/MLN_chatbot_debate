@@ -1,0 +1,46 @@
+# 🚀 Git Commands để Push Code lên GitHub
+
+## Chạy từng lệnh này:
+
+# 1. Check git status
+git status
+
+# 2. Add all changes
+git add .
+
+# 3. Commit với message chi tiết
+git commit -m "🔧 Fix Phase 2 Issues - Complete Phase 2 Flow
+
+✅ Backend Fixes:
+- Relaxed validation to allow test content like '11111111111 asdf'
+- Added anti-repetition logic for AI questions  
+- Improved error handling with detailed messages
+- Enhanced fallback question generation
+
+✅ Frontend Fixes:
+- Fixed Request Next Question button positioning (moved outside hasUnansweredQuestion logic)
+- Always enable button after successful answer submission
+- Added comprehensive debug logging with 🔧 DEBUG messages
+- Implemented fallback logic when backend response missing 'turns' field
+- Improved error handling for troubleshooting
+
+✅ Scripts Added:
+- reset_all.sh: Comprehensive system reset
+- quick_fix_button.sh: Frontend button fix
+- restart_all_services.sh: Service restart with all fixes
+- push_to_github.sh: GitHub push automation
+- CHANGES_SUMMARY.md: Complete documentation
+
+🧪 Testing Flow:
+1. Submit Phase 2 answer (even test content like '11111111111 asdf')
+2. Button 'Yêu cầu câu hỏi tiếp theo' appears below conversation
+3. Click button to get next AI question
+4. Repeat for multiple rounds
+
+🔍 Debug: Check browser console for '🔧 DEBUG:' messages"
+
+# 4. Push to GitHub
+git push origin main
+
+# 5. Verify push
+git log --oneline -5 
