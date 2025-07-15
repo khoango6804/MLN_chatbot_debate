@@ -2,16 +2,18 @@
 <html lang="vi">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/softskills_logo.png" />
-    <link rel="shortcut icon" href="%PUBLIC_URL%/softskills_logo.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#007AFF" />
     <meta
       name="description"
       content="Hệ thống Debate AI giúp sinh viên phát triển tư duy phản biện, kỹ năng tranh luận, ứng dụng cho môn MLN111 và MLN122. Trải nghiệm debate với AI, đánh giá tự động, giao diện hiện đại."
     />
     <meta name="keywords" content="AI Debate, MLN111, MLN122, tranh luận, debate, tư duy phản biện, soft skills, FPTU, AI, hệ thống debate, kỹ năng mềm" />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/softskills_logo.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/softskills_logo.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/softskills_logo.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/softskills_logo.png" />
@@ -27,7 +29,104 @@
     <meta name="twitter:title" content="AI Debate System - Hệ thống tranh luận thông minh" />
     <meta name="twitter:description" content="Hệ thống Debate AI giúp sinh viên phát triển tư duy phản biện, kỹ năng tranh luận, ứng dụng cho môn MLN111 và MLN122." />
     <meta name="twitter:image" content="%PUBLIC_URL%/softskills_logo.png" />
-    <title>AI Debate System</title>
+    <title>AI Debate System - MLN111+MLN122</title>
+    
+    <!-- 🚨 CACHE BUSTING META TAGS 🚨 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="cache-control" content="max-age=0" />
+    
+    <!-- Balanced responsive CSS -->
+    <style>
+      /* Base styles for all devices */
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+      
+      html {
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
+      
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+          'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      
+      #root {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      
+      /* Mobile optimizations (phones) */
+      @media screen and (max-width: 599px) {
+        body {
+          overflow-x: hidden;
+        }
+        
+        .MuiContainer-root {
+          padding-left: 16px !important;
+          padding-right: 16px !important;
+        }
+        
+        .MuiTypography-h2 {
+          font-size: 1.75rem !important;
+        }
+        
+        .MuiTypography-h3 {
+          font-size: 1.5rem !important;
+        }
+        
+        .MuiTypography-h4 {
+          font-size: 1.375rem !important;
+        }
+        
+        .MuiTypography-h5 {
+          font-size: 1.25rem !important;
+        }
+        
+        .MuiButton-root {
+          min-height: 44px;
+          font-size: 0.875rem !important;
+        }
+        
+        .MuiInputBase-input {
+          font-size: 0.875rem !important;
+        }
+      }
+      
+      /* Tablet optimizations */
+      @media screen and (min-width: 600px) and (max-width: 959px) {
+        .MuiContainer-root {
+          padding-left: 24px !important;
+          padding-right: 24px !important;
+        }
+      }
+      
+      /* Desktop - keep original styling */
+      @media screen and (min-width: 960px) {
+        /* Let desktop use default MUI styles */
+      }
+      
+      /* Ensure forms are responsive */
+      .MuiTextField-root {
+        width: 100%;
+      }
+      
+      /* Prevent horizontal scroll */
+      .MuiGrid-container {
+        width: 100%;
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

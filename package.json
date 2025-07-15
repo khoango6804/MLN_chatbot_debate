@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "http-proxy-middleware": "^3.0.5",
+    "install": "^0.13.0",
+    "npm": "^10.9.3"
+  }
+}

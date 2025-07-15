@@ -31,7 +31,7 @@ console.log('DEBATE ROOM JS LOADED');
 
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
+  baseURL: 'https://mlndebate.io.vn/api',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -50,13 +50,13 @@ function formatAIResponse(text) {
 function DebateRoom() {
   const navigate = useNavigate();
   const { team_id } = useParams(); // Lấy team_id từ URL
-  const { setShowHeader } = useLayout();
+  const { setShowHeader, setShowFooter } = useLayout();
   const theme = useTheme();
 
   const [teamInfo, setTeamInfo] = useState({ teamId: team_id }); // Khởi tạo với teamId
-
   const [phase, setPhase] = useState(0);
   const [topic, setTopic] = useState('');
+  const [stance, setStance] = useState(''); // Add stance state
   // Unused state variables removed to fix warnings
   const [evaluation, setEvaluation] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -70,23 +70,28 @@ function DebateRoom() {
   // showExportDialog removed - unused
   const [turns, setTurns] = useState([]);
   const [turnsPhase2, setTurnsPhase2] = useState([]); // Lưu lịch sử phase 2
+  const [turnsPhase3, setTurnsPhase3] = useState([]); // Lưu lịch sử phase 3
   const [currentAnswer, setCurrentAnswer] = useState("");
   const [turnLoading, setTurnLoading] = useState(false);
+  const [canRequestNextQuestion, setCanRequestNextQuestion] = useState(false);
   // Removed unused state variables
   const [studentArguments, setStudentArguments] = useState(["", "", ""]);
   const [aiPoints, setAiPoints] = useState([]);
   const [violationDetected, setViolationDetected] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(900); // 15 minutes for preparation
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes for preparation
   const [timerActive, setTimerActive] = useState(false);
+  const [aiCounterArguments, setAiCounterArguments] = useState([]);
   // Removed unused variables to fix warnings
 
   // Effect to hide/show header
   useEffect(() => {
     setShowHeader(false); // Hide header when entering the debate room
+    setShowFooter(false); // Hide footer when entering the debate room
     return () => {
       setShowHeader(true); // Show header when leaving
+      setShowFooter(true); // Show footer when leaving
     };
-  }, [setShowHeader]);
+  }, [setShowHeader, setShowFooter]);
 
   useEffect(() => {
     if (!team_id) {
@@ -98,13 +103,56 @@ function DebateRoom() {
       try {
         setLoading(true);
         const response = await api.get(`/debate/${team_id}/info`);
-        const { topic, members, course_code } = response.data;
+        const { topic, members, course_code, current_phase } = response.data;
+        
+        // 🔧 FIX: Check if session already has stance and phase
+        let sessionStance = response.data.stance;
+        let sessionPhase = current_phase;
+        
+        if (!sessionStance) {
+          // Randomly assign stance only if not already set
+          const randomStance = Math.random() < 0.5 ? 'ĐỒNG TÌNH' : 'PHẢN ĐỐI';
+          await api.post(`/debate/${team_id}/stance`, { stance: randomStance });
+          sessionStance = randomStance;
+        }
         
         setTopic(topic);
         setTeamInfo({ teamId: team_id, members, courseCode: course_code });
-        // setSessionInfo removed - unused variable
-        setPhase(0.5); // Bắt đầu vào giai đoạn chuẩn bị
-        setSuccess('Đã tải thông tin debate! Bắt đầu 10 phút chuẩn bị.');
+        setStance(sessionStance);
+        
+        // 🔧 FIX: Set phase based on current session state
+        if (sessionPhase === 'Phase 2') {
+          setPhase(2);
+          // Load existing Phase 2 turns data immediately
+          try {
+            const turnsResponse = await api.get(`/debate/${team_id}/turns`);
+            if (turnsResponse.data.success && turnsResponse.data.phase2_turns) {
+              setTurnsPhase2(turnsResponse.data.phase2_turns);
+              console.log('✅ Loaded existing Phase 2 turns on page load:', turnsResponse.data.phase2_turns.length);
+            }
+          } catch (turnsError) {
+            console.error('Failed to load existing turns:', turnsError);
+          }
+        } else if (sessionPhase === 'Phase 3') {
+          setPhase(3);
+          // Load existing turns for both phases
+          try {
+            const turnsResponse = await api.get(`/debate/${team_id}/turns`);
+            if (turnsResponse.data.success) {
+              setTurnsPhase2(turnsResponse.data.phase2_turns || []);
+              setTurnsPhase3(turnsResponse.data.phase3_turns || []);
+              console.log('✅ Loaded existing turns for Phase 3');
+            }
+          } catch (turnsError) {
+            console.error('Failed to load existing turns:', turnsError);
+          }
+        } else {
+          setPhase(0.5); // Start with preparation phase
+          setTimeLeft(300); // 5 minutes
+          setTimerActive(true);
+        }
+        
+        setSuccess('Đã tải thông tin debate! Lập trường của nhóm: ' + sessionStance);
 
       } catch (error) {
         console.error("Failed to fetch debate info:", error);
@@ -196,9 +244,61 @@ function DebateRoom() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.post(`/debate/${team_id}/phase4/evaluate`);
+      // Step 1: Submit user's conclusion from Phase 4
+      const conclusion = studentArguments[0]?.trim();
+      if (!conclusion || conclusion.length < 100) {
+        setError("Vui lòng nhập kết luận ít nhất 100 ký tự trước khi chấm điểm.");
+        return;
+      }
+      
+      try {
+        const conclusionResponse = await api.post(`/debate/${team_id}/phase4/conclusion`, {
+          team_id: team_id,
+          arguments: [conclusion] // Phase 4 chỉ cần 1 conclusion
+        });
+        console.log('CONCLUSION RESPONSE', conclusionResponse.data);
+      } catch (conclusionErr) {
+        // If session not found, redirect to home
+        if (conclusionErr.response?.status === 404) {
+          setError("Session không tồn tại. Đang chuyển về trang chủ...");
+          setTimeout(() => navigate('/'), 2000);
+          return;
+        }
+        // If conclusion already exists, that's fine
+        if (conclusionErr.response?.status !== 400) {
+          throw conclusionErr;
+        }
+      }
+
+      // Step 2: Generate AI counter-arguments (Skip nếu có lỗi)
+      try {
+        const aiResponse = await api.post(`/debate/${team_id}/phase4/ai-conclusion`);
+        console.log('AI COUNTER-CONCLUSION RESPONSE', aiResponse.data);
+        setAiCounterArguments(aiResponse.data.ai_counter_arguments || []);
+      } catch (aiErr) {
+        console.log('Skipping AI counter-arguments due to error:', aiErr.response?.data);
+        // Skip AI step nếu có lỗi
+        setAiCounterArguments(["AI counter-arguments bị bỏ qua do lỗi hệ thống"]);
+      }
+
+      // Step 3: Complete Phase 4
+      try {
+        await api.post(`/debate/${team_id}/phase4/evaluate`);
+        console.log('PHASE 4 COMPLETED');
+      } catch (phase4Err) {
+        // If already completed, that's fine
+        if (phase4Err.response?.status !== 400) {
+          console.log('Phase 4 evaluate error (continuing):', phase4Err.response?.data);
+        }
+      }
+
+      // Step 4: Final evaluation (Phase 5)
+      const response = await api.post(`/debate/${team_id}/phase5/evaluate`);
       console.log('EVALUATION RESPONSE', response.data);
-      setEvaluation(response.data.data?.evaluation || response.data.evaluation);
+      const evaluationData = response.data.data?.evaluation || response.data.evaluation;
+      console.log('SETTING EVALUATION:', evaluationData);
+      setEvaluation(evaluationData);
+      setPhase(5); // Force phase to 5 to show results
       setTimerActive(false);
       setSuccess("Debate evaluated successfully!");
     } catch (err) {
@@ -212,7 +312,48 @@ function DebateRoom() {
     } finally {
       setLoading(false);
     }
-  }, [team_id, navigate]);
+  }, [team_id, navigate, studentArguments]);
+
+  // Handle AI counter-conclusion generation
+  const handleAICounterConclusion = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Step 1: Submit student conclusion first
+      const conclusion = studentArguments[0]?.trim();
+      if (!conclusion || conclusion.length < 100) {
+        setError("Vui lòng nhập kết luận ít nhất 100 ký tự trước khi lấy phản bác AI.");
+        return;
+      }
+      
+      try {
+        const conclusionResponse = await api.post(`/debate/${team_id}/phase4/conclusion`, {
+          team_id: team_id,
+          arguments: [conclusion] // Phase 4 chỉ cần 1 conclusion
+        });
+        console.log('CONCLUSION SUBMITTED', conclusionResponse.data);
+      } catch (conclusionErr) {
+        console.log('Conclusion already submitted or error:', conclusionErr.response?.data);
+        // Continue anyway, might be already submitted
+      }
+      
+      // Step 2: Get AI counter arguments
+      const response = await api.post(`/debate/${team_id}/phase4/ai-conclusion`);
+      console.log('AI COUNTER-CONCLUSION RESPONSE', response.data);
+      setAiCounterArguments(response.data.ai_counter_arguments || []);
+      setSuccess("AI đã tạo luận điểm tổng kết phản bác!");
+    } catch (err) {
+      console.error("Lỗi khi tạo luận điểm AI:", err.response?.data || err.message);
+      if (err.response?.status === 404) {
+        setError("Session không tồn tại hoặc đã hết hạn. Đang chuyển về trang chủ...");
+        setTimeout(() => navigate('/'), 2000);
+      } else {
+        setError("Lỗi khi tạo luận điểm AI: " + (err.response?.data?.detail || err.message));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Timer countdown effect
   useEffect(() => {
@@ -220,16 +361,76 @@ function DebateRoom() {
       if (timeLeft <= 0) {
         setTimerActive(false);
         if (phase === 0.5) {
-          // Reset về phase 1.5 và set lại timeLeft 5 phút
-          setPhase(1.5);
-          setTimeLeft(300);
+          // When prep phase ends, start phase 1 by getting AI arguments
+          handlePhase1();
+        } else if (phase === 1.5) {
+          // When phase 1.5 ends (student arguments input), auto-submit if valid
+          const validArguments = studentArguments.filter(arg => arg?.trim().length > 0);
+          if (validArguments.length >= 3) {
+            handleSendStudentArguments();
+          } else {
+            setError("Vui lòng nhập đủ 3 luận điểm trước khi hết giờ!");
+            setTimeLeft(60); // Give 1 more minute
           setTimerActive(true);
-          handlePhase1(); // Lấy luận điểm AI nếu cần
-          return;
+          }
         } else if (phase === 2) {
-          setPhase(3); // Chuyển từ Phase 2 sang Phase 3
+          setPhase(3); // Move from Phase 2 to Phase 3
         } else if (phase === 3) {
-          setPhase(4); // Chuyển từ Phase 3 sang Phase 4
+          setPhase(4); // Move from Phase 3 to Phase 4
+        } else if (phase === 4) {
+          // Phase 4 timeout handling
+          const hasConclusion = studentArguments.filter(arg => arg?.trim()).length >= 1 && 
+                              studentArguments[0]?.trim().length >= 100;
+          
+          if (hasConclusion) {
+            // Auto-submit conclusion when time runs out
+            (async () => {
+              setLoading(true);
+              try {
+                // Step 1: Submit conclusion
+                await api.post(`/debate/${team_id}/phase4/conclusion`, {
+                  team_id: team_id,
+                  arguments: [studentArguments[0].trim()]
+                });
+                
+                // Step 2: Generate AI counter-arguments
+                try {
+                  const aiResponse = await api.post(`/debate/${team_id}/phase4/ai-conclusion`);
+                  setAiCounterArguments(aiResponse.data.ai_counter_arguments || ["AI không có phản hồi"]);
+                } catch (aiErr) {
+                  console.log('AI counter-arguments skipped:', aiErr.response?.data);
+                  setAiCounterArguments(["AI đã từ chối tham gia phản bác"]);
+                }
+                
+                // Step 3: Complete Phase 4
+                try {
+                  await api.post(`/debate/${team_id}/phase4/evaluate`);
+                } catch (phase4Err) {
+                  if (phase4Err.response?.status !== 400) {
+                    console.log('Phase 4 evaluate error (continuing):', phase4Err.response?.data);
+                  }
+                }
+                
+                // Step 4: Final evaluation (Phase 5)
+                setSuccess("⏳ Thời gian hết! AI đang phân tích toàn bộ debate và chấm điểm... (5-10 giây)");
+                const response = await api.post(`/debate/${team_id}/phase5/evaluate`);
+                const evaluationData = response.data.data?.evaluation || response.data.evaluation;
+                setEvaluation(evaluationData);
+                setPhase(5);
+                setTimerActive(false);
+                setSuccess("🎉 Debate đã được chấm điểm tự động thành công!");
+                
+              } catch (err) {
+                console.error("Lỗi khi tự động nộp kết luận:", err);
+                setError("Lỗi khi tự động nộp kết luận: " + (err.response?.data?.detail || err.message));
+              } finally {
+                setLoading(false);
+              }
+            })();
+          } else {
+            // Nếu chưa có kết luận hợp lệ
+            setError("⚠️ Thời gian đã hết! Vui lòng nhập kết luận có ít nhất 100 ký tự để được chấm điểm.");
+          }
         }
       }
       return;
@@ -238,7 +439,7 @@ function DebateRoom() {
       setTimeLeft(prevTime => prevTime - 1);
     }, 1000);
     return () => clearInterval(intervalId);
-  }, [timeLeft, timerActive, phase, handlePhase1]);
+  }, [timeLeft, timerActive, phase, handlePhase1, studentArguments, team_id, api, setLoading, setEvaluation, setPhase, setTimerActive, setSuccess, setError, navigate]);
 
   // Effect to set timers when phase changes
   useEffect(() => {
@@ -246,10 +447,12 @@ function DebateRoom() {
     updateBackendPhase(phase); // Report new phase to backend
 
     if (phase === 0.5) { // GĐ Chuẩn bị
-      setTimeLeft(600); // 10 phút
+      console.log('🔧 DEBUG [v2.0]: Setting Phase 0.5 timer to 300 seconds (5 minutes) at', new Date().toLocaleTimeString());
+      setTimeLeft(300); // 5 phút
       setTimerActive(true);
     } else if (phase === 1.5) { // Phiên 1: Trình bày luận điểm mở
-      setTimeLeft(300); // 5 phút
+      console.log('🔧 DEBUG [v2.0]: Setting Phase 1.5 timer to 600 seconds (10 minutes) at', new Date().toLocaleTimeString());
+      setTimeLeft(600); // 10 phút
       setTimerActive(true);
     } else if (phase === 2) { // Phase 2: AI hỏi, SV trả lời
       setTimeLeft(420); // 7 phút
@@ -257,6 +460,12 @@ function DebateRoom() {
     } else if (phase === 3) { // Phase 3: SV hỏi, AI trả lời
       setTimeLeft(420); // 7 phút
       setTimerActive(true);
+    } else if (phase === 4) { // Phase 4: Kết luận Debate
+      console.log('🔧 DEBUG [v2.0]: Setting Phase 4 timer to 300 seconds (5 minutes) at', new Date().toLocaleTimeString());
+      setTimeLeft(300); // 5 phút
+      setTimerActive(true);
+      // Reset arguments for phase 4 conclusion
+      setStudentArguments(['', '', '']);
     }
   }, [phase, updateBackendPhase]);
 
@@ -275,14 +484,16 @@ function DebateRoom() {
     };
 
     const handleViolation = () => {
-      // Chỉ xử lý vi phạm trong các giai đoạn chính của debate
-      if ((phase >= 1 && phase <= 3) && !violationDetected) {
+      // Chỉ xử lý vi phạm trong Phase 1-3, không áp dụng cho Phase 4 và khi có evaluation
+      // Phase 4 cho phép tự do hơn vì là giai đoạn tổng kết
+      if ((phase >= 1 && phase <= 3) && !violationDetected && !loading && !evaluation) {
         setTimerActive(false); // Dừng timer khi vi phạm
         setViolationDetected(true);
       }
     };
 
-    if ((phase >= 1 && phase <= 3) && !violationDetected) {
+    // Chỉ enable detection cho Phase 1-3, không cho Phase 4
+    if ((phase >= 1 && phase <= 3) && !violationDetected && !evaluation) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
       document.addEventListener('fullscreenchange', handleFullscreenChange);
     }
@@ -291,7 +502,7 @@ function DebateRoom() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [phase, violationDetected]);
+  }, [phase, violationDetected, loading, evaluation]);
 
   useEffect(() => {
     if (phase === 4 && evaluation) {
@@ -309,11 +520,7 @@ function DebateRoom() {
     // eslint-disable-next-line
   }, [phase, evaluation]);
 
-  useEffect(() => {
-    if (phase === 4 && !evaluation && !loading && !error) {
-      handleEvaluation();
-    }
-  }, [phase, evaluation, loading, error, handleEvaluation]);
+  // Phase 4 không tự động evaluate, cần người dùng thực hiện conclusion trước
 
   // startDebate function removed - unused
 
@@ -324,19 +531,51 @@ function DebateRoom() {
     try {
       setLoading(true);
       setError(null);
-      // 1. Gửi luận điểm nhóm
-      await api.post(`/debate/${team_id}/phase2`, { team_arguments: studentArguments });
-      // 2. Khởi tạo phase 2
-      const phase2Response = await api.post(`/debate/${team_id}/phase2/start`);
-      console.log('setTurnsPhase2 (from handleSendStudentArguments):', phase2Response.data.turns);
-      setTurnsPhase2(phase2Response.data.turns || []); // Cập nhật turnsPhase2 từ response
-      setSuccess('Đã gửi luận điểm nhóm và bắt đầu Debate Socratic!');
+      // 1. Lấy câu hỏi AI từ Phase 2
+      const phase2Response = await api.post(`/debate/${team_id}/phase2`, { team_arguments: studentArguments });
+      console.log('Phase 2 AI Questions Response:', phase2Response.data);
+      
+      // 2. Chuyển đổi ai_questions thành format turns (chỉ lấy 1 câu hỏi đầu tiên)
+      const aiQuestions = phase2Response.data.data?.ai_questions || [];
+      const selectedQuestion = aiQuestions.length > 0 ? aiQuestions[0] : "Không có câu hỏi từ AI";
+      const formattedTurns = [{
+        asker: 'ai',
+        question: selectedQuestion,
+        answer: null,
+        turn_number: 1
+      }];
+      
+      console.log('Formatted AI Questions as Turns:', formattedTurns);
+      setTurnsPhase2(formattedTurns);
+      
+      // 3. Khởi tạo phase 2
+      await api.post(`/debate/${team_id}/phase2/start`);
+      
+      setSuccess('Đã lấy câu hỏi AI và bắt đầu Phase 2!');
       setPhase(2); // Sang phase 2
     } catch (err) {
-      setError('Gửi luận điểm nhóm hoặc khởi tạo Debate Socratic thất bại!');
+      console.error('Phase 2 Error:', err);
+      setError('Lấy câu hỏi AI hoặc khởi tạo Phase 2 thất bại!');
     } finally {
       setLoading(false);
     }
+  };
+
+  // Validation function cho nội dung câu trả lời
+  const isValidContent = (content) => {
+    if (!content || typeof content !== 'string') return false;
+    const trimmedContent = content.trim();
+    if (trimmedContent.length < 10) return false; // Tối thiểu 10 ký tự
+    
+    // Kiểm tra nội dung không phải chỉ là ký tự lặp lại
+    const uniqueChars = new Set(trimmedContent.toLowerCase().replace(/\s/g, ''));
+    if (uniqueChars.size < 3) return false; // Tối thiểu 3 ký tự khác nhau
+    
+    // Kiểm tra không phải chỉ toàn số hoặc ký tự đặc biệt
+    const hasLetters = /[a-zA-ZÀ-ỹ]/.test(trimmedContent);
+    if (!hasLetters) return false;
+    
+    return true;
   };
 
   // Gửi lượt debate phase 2 (AI chất vấn sinh viên)
@@ -344,19 +583,142 @@ function DebateRoom() {
     if (turnsPhase2.length === 0) return;
     const lastAIQuestion = [...turnsPhase2].reverse().find(t => t.asker === 'ai');
     if (!lastAIQuestion || !lastAIQuestion.question) return;
-    if (!currentAnswer.trim()) return;
+    
+    // Enhanced validation
+    if (!isValidContent(currentAnswer)) {
+      setError('Vui lòng nhập câu trả lời có ý nghĩa (tối thiểu 10 ký tự, có chữ cái)');
+      return;
+    }
+    
+    const answerToSubmit = currentAnswer.trim();
+    
     try {
       setTurnLoading(true);
+      setError(null);
+      
+      // 🔧 FIX: Optimistic update matching sequential pairing logic
+      const optimisticTurns = [...turnsPhase2];
+      
+      // Find if there's already a student turn for this AI question that needs updating
+      const existingStudentTurn = optimisticTurns.find(t => 
+        t.asker === 'student' && 
+        t.question === lastAIQuestion.question && 
+        (!t.answer || t.answer === 'null' || t.answer.trim() === '')
+      );
+      
+      if (existingStudentTurn) {
+        // Update existing student turn
+        existingStudentTurn.answer = answerToSubmit;
+        console.log('🔧 DEBUG: Updated existing student turn:', existingStudentTurn);
+      } else {
+        // Add new student turn with proper turn_number
+        const newStudentTurn = {
+          asker: 'student',
+          question: lastAIQuestion.question,
+          answer: answerToSubmit,
+          turn_number: optimisticTurns.length + 1
+        };
+        optimisticTurns.push(newStudentTurn);
+        console.log('🔧 DEBUG: Added new student turn:', newStudentTurn);
+      }
+      
+      console.log('🔧 DEBUG: Optimistic update with student answer:', answerToSubmit);
+      setTurnsPhase2(optimisticTurns);
+      
+      // Clear input immediately
+      setCurrentAnswer('');
+      
+      // Send to backend
       const response = await api.post(`/debate/${team_id}/ai-question/turn`, {
-        answer: currentAnswer.trim(),
+        answer: answerToSubmit,
         asker: 'student',
         question: lastAIQuestion.question,
       });
-      setCurrentAnswer('');
-      console.log('setTurnsPhase2 (from handleSendStudentTurn):', response.data.turns);
-      setTurnsPhase2(response.data.turns || []);
+      
+      console.log('🔧 DEBUG: Full backend response:', response.data);
+      
+      // 🔧 FIX: Smart merge backend response with optimistic update
+      if (response.data.turns) {
+        const backendTurns = response.data.turns.map((turn, idx) => ({
+          asker: turn.asker,
+          question: turn.question,
+          answer: turn.answer === 'null' ? null : turn.answer, // Convert "null" string to null
+          turn_number: idx + 1
+        }));
+        
+        console.log('🔧 DEBUG: Backend response turns:', backendTurns);
+        
+                 // 🔧 FIX: Use backend turns directly since they contain all data
+         // Backend already has the complete data including the new answer
+         const mergedTurns = backendTurns;
+        
+        console.log('🔧 DEBUG: Final merged turns:', mergedTurns);
+        setTurnsPhase2(mergedTurns);
+      }
+      
+      // 🔧 FIX: Always enable "Request Next Question" button after successful answer submission
+      // regardless of backend response format to ensure UX continuity
+      console.log('🔧 DEBUG: Enabling Request Next Question button');
+      setCanRequestNextQuestion(true);
+      setSuccess('Câu trả lời đã được gửi! Bạn có thể yêu cầu câu hỏi tiếp theo.');
+      
     } catch (err) {
-      setError(err.response?.data?.detail || "Gửi lượt debate phase 3 (Sinh viên chất vấn AI) thất bại!");
+      console.error('Phase 2 turn error:', err);
+      setError(err.response?.data?.detail || "Gửi câu trả lời thất bại! Vui lòng thử lại.");
+      
+      // 🔧 FIX: Revert optimistic update on error
+      const revertedTurns = turnsPhase2.filter(t => 
+        !(t.asker === 'student' && t.answer === answerToSubmit)
+      );
+      setTurnsPhase2(revertedTurns);
+      setCurrentAnswer(answerToSubmit); // Restore input
+    } finally {
+      setTurnLoading(false);
+    }
+  };
+
+  // 🔧 NEW: Handle requesting next AI question
+  const handleRequestNextQuestion = async () => {
+    try {
+      setTurnLoading(true);
+      setError(null);
+      
+      console.log('🔧 DEBUG: Requesting next AI question for team:', team_id);
+      const response = await api.post(`/debate/${team_id}/ai-question/generate`);
+      console.log('🔧 DEBUG: AI question generate response:', response.data);
+      
+      if (response.data.turns) {
+        const backendTurns = response.data.turns.map((turn, idx) => ({
+          asker: turn.asker,
+          question: turn.question,
+          answer: turn.answer === 'null' ? null : turn.answer,
+          turn_number: idx + 1
+        }));
+        
+        console.log('🔧 DEBUG: New AI question received, updating turns:', backendTurns);
+        setTurnsPhase2(backendTurns);
+        setCanRequestNextQuestion(false); // Disable button after getting new question
+        setSuccess('Đã nhận câu hỏi AI mới!');
+      } else if (response.data.success) {
+        // 🔧 FALLBACK: If response is successful but no turns field, create manual turn
+        console.log('🔧 DEBUG: No turns field, but response successful. Creating fallback question.');
+        const fallbackQuestion = "Bạn có thể giải thích thêm về quan điểm của mình không?";
+        const newTurn = {
+          asker: 'ai',
+          question: fallbackQuestion,
+          answer: null,
+          turn_number: turnsPhase2.length + 1
+        };
+        setTurnsPhase2(prev => [...prev, newTurn]);
+        setCanRequestNextQuestion(false);
+        setSuccess('Đã tạo câu hỏi AI mới!');
+      } else {
+        throw new Error('Response không hợp lệ từ backend');
+      }
+      
+    } catch (err) {
+      console.error('Request next question error:', err);
+      setError(`Lỗi lấy câu hỏi tiếp theo: ${err.response?.data?.detail || err.message}. Vui lòng thử lại.`);
     } finally {
       setTurnLoading(false);
     }
@@ -364,19 +726,57 @@ function DebateRoom() {
 
   // Gửi lượt debate phase 3 (Sinh viên chất vấn AI)
   const handleSendStudentQuestion = async (question) => {
-    // Bỏ giới hạn số lượt nếu muốn debate thoải mái
+    // Enhanced validation cho câu hỏi
+    if (!isValidContent(question)) {
+      setError('Vui lòng nhập câu hỏi có ý nghĩa (tối thiểu 10 ký tự, có chữ cái)');
+      return;
+    }
+    
     try {
       setTurnLoading(true);
+      
+      // Optimistic update: Add student question first to Phase 3 turns
+      const optimisticQuestionTurn = {
+        asker: 'student',
+        question: question.trim(),
+        answer: null,
+        turn_number: turnsPhase3.length + 1
+      };
+      
+      setTurnsPhase3(prev => [...prev, optimisticQuestionTurn]);
+      setCurrentAnswer(''); // Clear input field immediately
+      
       const response = await api.post(`/debate/${team_id}/student-question/turn`, {
         asker: 'student',
-        question: question,
+        question: question.trim(),
         answer: null
       });
-      // Cập nhật turns từ response
-      setTurns(response.data.turns || []);
-      setCurrentAnswer(''); // Clear input field
+      
+      console.log('🔧 DEBUG Phase 3 response:', response.data);
+      
+      // 🔧 FIX: Use backend Phase 3 turns directly
+      if (response.data.turns) {
+        const backendTurns = response.data.turns;
+        console.log('🔧 DEBUG: Backend Phase 3 turns:', backendTurns);
+        
+        // Convert backend format to frontend format
+        const formattedTurns = backendTurns.map((turn, idx) => ({
+          asker: turn.asker,
+          question: turn.question,
+          answer: turn.answer === 'null' ? null : turn.answer,
+          turn_number: idx + 1
+        }));
+        
+        setTurnsPhase3(formattedTurns);
+      }
+      
     } catch (err) {
+      console.error('Phase 3 error:', err);
       setError(err.response?.data?.detail || "Gửi lượt debate phase 3 (Sinh viên chất vấn AI) thất bại!");
+      
+      // Revert optimistic update on error
+      setTurnsPhase3(prev => prev.slice(0, -1));
+      setCurrentAnswer(question); // Restore input
     } finally {
       setTurnLoading(false);
     }
@@ -424,6 +824,7 @@ function DebateRoom() {
   const formatTime = (seconds) => {
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
+    console.log(`🔧 DEBUG formatTime: ${seconds} seconds = ${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`);
     return `${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
   };
 
@@ -502,19 +903,72 @@ function DebateRoom() {
   */
 
   useEffect(() => {
-    if (phase === 2 && team_id) {
+    if (phase === 2 && team_id && turnsPhase2.length === 0) {
       (async () => {
-        setLoading(true);
-        const res = await api.post(`/debate/${team_id}/phase2/start`);
-        setTurnsPhase2(res.data.turns || []);
-        setLoading(false);
+        try {
+          setLoading(true);
+          
+          // 🔧 FIX: First try to load existing Phase 2 turns data
+          console.log('🔧 DEBUG: Loading existing Phase 2 turns data...');
+          const turnsResponse = await api.get(`/debate/${team_id}/turns`);
+          if (turnsResponse.data.success && turnsResponse.data.phase2_turns && turnsResponse.data.phase2_turns.length > 0) {
+            // Existing turns found - load them
+            console.log('🔧 DEBUG: Found existing Phase 2 turns:', turnsResponse.data.phase2_turns);
+            setTurnsPhase2(turnsResponse.data.phase2_turns);
+            console.log('✅ Loaded existing Phase 2 turns from backend');
+          } else {
+            // No existing turns - initialize Phase 2
+            console.log('🔧 DEBUG: No existing turns found, initializing Phase 2...');
+            
+            // 1. Lấy câu hỏi AI cho Phase 2
+            const questionsResponse = await api.post(`/debate/${team_id}/phase2`);
+            console.log('Phase 2 Questions Response:', questionsResponse.data);
+            
+            // 2. Chuyển đổi ai_questions thành format turns (chỉ lấy 1 câu hỏi đầu tiên)
+            const aiQuestions = questionsResponse.data.data?.ai_questions || [];
+            const selectedQuestion = aiQuestions.length > 0 ? aiQuestions[0] : "Không có câu hỏi từ AI";
+            const formattedTurns = [{
+              asker: 'ai',
+              question: selectedQuestion,
+              answer: null,
+              turn_number: 1
+            }];
+            
+            console.log('Formatted AI Questions as Turns:', formattedTurns);
+            setTurnsPhase2(formattedTurns);
+            
+            // 3. Khởi tạo phase 2
+            await api.post(`/debate/${team_id}/phase2/start`);
+          }
+          
+        } catch (error) {
+          console.error('Phase 2 initialization error:', error);
+          setError('Không thể tải dữ liệu Phase 2');
+        } finally {
+          setLoading(false);
+        }
       })();
     }
-  }, [phase, team_id]);
+  }, [phase, team_id, turnsPhase2.length]);
 
-  // Khi chuyển sang phase 3, reset turns cho phase 3 (turnsPhase2 đã có dữ liệu phase 2 rồi)
-  const handleGoToPhase3 = () => {
-    setTurns([]); // Reset chat cho phase 3
+  // Khi chuyển sang phase 3, load existing turns data correctly separated
+  const handleGoToPhase3 = async () => {
+    try {
+      // Load existing turns data from backend with proper separation
+      const response = await api.get(`/debate/${team_id}/turns`);
+      if (response.data.success) {
+        setTurnsPhase2(response.data.phase2_turns || []);
+        setTurnsPhase3(response.data.phase3_turns || []);
+        console.log('🔧 DEBUG: Loaded separated turns data:', {
+          phase2: response.data.phase2_turns?.length || 0,
+          phase3: response.data.phase3_turns?.length || 0
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load turns data:', error);
+      // Initialize with empty arrays if loading fails
+      setTurnsPhase3([]);
+    }
     setPhase(3);
   };
 
@@ -554,7 +1008,7 @@ function DebateRoom() {
     );
   }
 
-  console.log('RENDER: phase', phase, 'evaluation', evaluation);
+  console.log('RENDER: phase', phase, 'evaluation', evaluation, 'hasEvaluation', !!evaluation);
 
   return (
     <Box sx={{
@@ -564,10 +1018,29 @@ function DebateRoom() {
       overflow: 'hidden',
       color: theme.palette.text.primary
     }}>
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Paper elevation={4} sx={{ p: 4, borderRadius: 3, background: theme.palette.background.paper, color: theme.palette.text.primary }}>
-          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="h4" color="primary" gutterBottom align="center">
+      <Container maxWidth="md" sx={{ py: { xs: 2, sm: 3, md: 4 }, px: { xs: 2, sm: 3 } }}>
+        <Paper elevation={4} sx={{ 
+          p: { xs: 3, sm: 4, md: 4 }, 
+          borderRadius: { xs: 2, md: 3 }, 
+          background: theme.palette.background.paper, 
+          color: theme.palette.text.primary,
+          mx: { xs: 0, sm: 0 }
+        }}>
+          <Box 
+            display="flex" 
+            justifyContent="space-between" 
+            alignItems="center" 
+            mb={2}
+            flexDirection={{ xs: "column", sm: "row" }}
+            gap={{ xs: 1, sm: 0 }}
+          >
+            <Typography 
+              variant={{ xs: "h5", sm: "h4" }} 
+              color="primary" 
+              gutterBottom 
+              align="center"
+              sx={{ fontSize: { xs: '1.75rem', sm: '2rem', md: '2.125rem' } }}
+            >
               AI Debate System
             </Typography>
             <IconButton color="primary" onClick={() => setShowHistory(true)} title="Xem lịch sử debate">
@@ -596,33 +1069,157 @@ function DebateRoom() {
 
           {phase === 0.5 && (
             <Box>
-              <Typography variant="h6" gutterBottom align="center" color="secondary">
-                Giai đoạn 0: Chuẩn bị
-              </Typography>
-               <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
+              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
                 <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
-                  Thời gian chuẩn bị: {formatTime(timeLeft)}
+                  ⏳ Thời gian chuẩn bị: {formatTime(timeLeft)}
                 </Typography>
-                <Typography variant="body1" sx={{ mt: 1 }}>
-                  Bạn có 10 phút để nghiên cứu chủ đề. 
-                  Hết giờ, hệ thống sẽ tự động chuyển sang Giai đoạn 1.
+                {timeLeft <= 0 && (
+                  <Typography color="error" variant="h6" sx={{ mt: 1 }}>
+                    Hết giờ! Chuyển sang phase 1...
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ 
+                p: 3, 
+                mb: 3, 
+                bgcolor: stance === 'ĐỒNG TÌNH' ? '#e8f5e9' : '#ffebee',
+                borderRadius: 2,
+                border: `2px solid ${stance === 'ĐỒNG TÌNH' ? '#4caf50' : '#f44336'}`
+              }}>
+                <Typography variant="h6" align="center" sx={{ mb: 2 }}>
+                  Chủ đề: {topic}
                 </Typography>
+                
+                <Typography variant="h6" align="center" sx={{
+                  color: stance === 'ĐỒNG TÌNH' ? '#2e7d32' : '#d32f2f',
+                  fontWeight: 'bold',
+                  mb: 2
+                }}>
+                  Lập trường của nhóm: {stance} {stance === 'ĐỒNG TÌNH' ? '✅' : '❌'}
+                </Typography>
+                
+                <Typography variant="body1" align="center" sx={{ color: 'text.secondary' }}>
+                  Hãy dành 5 phút để chuẩn bị các luận điểm {stance.toLowerCase()} với chủ đề này.
+                </Typography>
+              </Box>
+
+              <Box sx={{ textAlign: 'center', mt: 3 }}>
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  size="large"
+                  onClick={handlePhase1}
+                  disabled={loading}
+                  sx={{ px: 4, py: 1.5, fontSize: '1.1rem' }}
+                >
+                  {loading ? <CircularProgress size={24} /> : 'Bắt đầu Phase 1'}
+                </Button>
+                <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
+                  Hoặc đợi {formatTime(timeLeft)} để tự động bắt đầu
+                </Typography>
+              </Box>
+            </Box>
+          )}
+
+          {phase === 1.5 && (
+            <Box>
+              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
+                <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+                  ⏳ Thời gian trình bày luận điểm: {formatTime(timeLeft)}
+                </Typography>
+                {timeLeft <= 0 && (
+                  <Typography color="error" variant="h6" sx={{ mt: 1 }}>
+                    Hết giờ! Bạn không thể nộp luận điểm được nữa.
+                  </Typography>
+                )}
+              </Box>
+
+              <Typography variant="h6" gutterBottom>
+                3 luận điểm của AI {stance === 'ĐỒNG TÌNH' ? 'PHẢN ĐỐI' : 'ĐỒNG TÌNH'}:
+              </Typography>
+              <Box component="ul" sx={{ pl: 2, listStyle: 'none' }}>
+                {aiPoints.map((point, idx) => (
+                  <Typography component="li" key={idx} sx={{ mb: 2, lineHeight: 1.7 }}>
+                    <span dangerouslySetInnerHTML={{ __html: formatAIResponse(point) }} />
+                  </Typography>
+                ))}
+              </Box>
+              <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
+                Nhập 3 luận điểm {stance} của nhóm:
+              </Typography>
+              {studentArguments.map((arg, idx) => (
+                <TextField
+                  key={idx}
+                  fullWidth
+                  multiline
+                  rows={4}
+                  label={`Luận điểm ${idx + 1}`}
+                  value={arg}
+                  onChange={e => {
+                    const newArgs = [...studentArguments];
+                    newArgs[idx] = e.target.value;
+                    setStudentArguments(newArgs);
+                  }}
+                  sx={{ 
+                    mb: 2,
+                    '& .MuiInputBase-input': {
+                      fontSize: '1.1rem',
+                      lineHeight: 1.6
+                    },
+                    '& .MuiInputLabel-root': {
+                      fontSize: '1.1rem'
+                    }
+                  }}
+                  onPaste={(e) => { e.preventDefault(); return false; }}
+                  onCopy={(e) => { e.preventDefault(); return false; }}
+                  onCut={(e) => { e.preventDefault(); return false; }}
+                  helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
+                  disabled={timeLeft <= 0}
+                />
+              ))}
+              <Box sx={{ 
+                display: 'flex', 
+                flexDirection: { xs: 'column', sm: 'row' }, 
+                gap: { xs: 1, sm: 2 },
+                mt: 1 
+              }}>
                 <Button
                   variant="contained"
-                  color="primary"
-                  sx={{ mt: 2 }}
-                  onClick={() => {
-                    setTimerActive(false);
-                    handlePhase1();
+                  onClick={() => setStudentArguments([...studentArguments, ""])}
+                  disabled={timeLeft <= 0}
+                  sx={{ 
+                    px: { xs: 2, sm: 3 },
+                    py: { xs: 1, sm: 1.5 },
+                    fontSize: { xs: '0.875rem', sm: '1rem' }
                   }}
                 >
-                  Bắt đầu Phiên 1 ngay
+                  Thêm luận điểm
+                </Button>
+                <Button
+                  variant="contained"
+                  color="success"
+                  disabled={
+                    studentArguments.filter(arg => isValidContent(arg)).length < 3 || 
+                    timeLeft <= 0
+                  }
+                  onClick={() => {
+                    console.log('CLICK gửi luận điểm nhóm');
+                    handleSendStudentArguments();
+                  }}
+                  sx={{ 
+                    px: { xs: 2, sm: 3 },
+                    py: { xs: 1, sm: 1.5 },
+                    fontSize: { xs: '0.875rem', sm: '1rem' }
+                  }}
+                >
+                  Gửi luận điểm nhóm & Bắt đầu Debate Socratic
                 </Button>
               </Box>
             </Box>
           )}
 
-          {phase > 0 && (
+          {(phase === 2 || phase === 3) && (
             <Box sx={{ mb: 3, background: '#f8f8f8', p: 2, borderRadius: 2 }}>
               <Typography variant="subtitle1" sx={{ fontSize: '1.1rem', whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
                 <b>Chủ đề Debate:</b> {topic}
@@ -641,147 +1238,203 @@ function DebateRoom() {
             </Box>
           )}
 
-          {phase === 1.5 && (
-            <Box>
-              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
-                  Thời gian trình bày luận điểm: {formatTime(timeLeft)}
-                </Typography>
-                {timeLeft <= 0 && (
-                  <Typography color="error" variant="h6" sx={{ mt: 1 }}>
-                    Hết giờ! Bạn không thể nộp luận điểm được nữa.
-                  </Typography>
-                )}
-              </Box>
 
-              <Typography variant="h6" gutterBottom>
-                3 luận điểm của AI
-              </Typography>
-              <Box component="ul" sx={{ pl: 2, listStyle: 'none' }}>
-                {aiPoints.map((point, idx) => (
-                  <Typography component="li" key={idx} sx={{ mb: 2, lineHeight: 1.7 }}>
-                    <span dangerouslySetInnerHTML={{ __html: formatAIResponse(point) }} />
-                  </Typography>
-                ))}
-              </Box>
-              <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                Nhóm nhập ít nhất 3 luận điểm của mình
-              </Typography>
-              {studentArguments.map((arg, idx) => (
-                <TextField
-                  key={idx}
-                  fullWidth
-                  multiline
-                  rows={2}
-                  label={`Luận điểm ${idx + 1}`}
-                  value={arg}
-                  onChange={e => {
-                    const newArgs = [...studentArguments];
-                    newArgs[idx] = e.target.value;
-                    setStudentArguments(newArgs);
-                  }}
-                  sx={{ mb: 2 }}
-                  onPaste={(e) => { e.preventDefault(); return false; }}
-                  onCopy={(e) => { e.preventDefault(); return false; }}
-                  onCut={(e) => { e.preventDefault(); return false; }}
-                  helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
-                  disabled={timeLeft <= 0}
-                />
-              ))}
-              <Button
-                variant="contained"
-                sx={{ mt: 1, mr: 2 }}
-                onClick={() => setStudentArguments([...studentArguments, ""])}
-                disabled={timeLeft <= 0}
-              >
-                Thêm luận điểm
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                sx={{ mt: 1 }}
-                disabled={studentArguments.filter(arg => arg.trim()).length < 3 || timeLeft <= 0}
-                onClick={() => {
-                  console.log('CLICK gửi luận điểm nhóm');
-                  handleSendStudentArguments();
-                }}
-              >
-                Gửi luận điểm nhóm & Bắt đầu Debate Socratic
-              </Button>
-            </Box>
-          )}
 
           {phase === 2 && (
             <Box>
-              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, bgcolor: 'white' }}>
+                <Typography 
+                  variant={{ xs: "h6", sm: "h5" }} 
+                  color={timeLeft < 60 ? 'error' : 'primary'}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.5rem' }, mb: 1 }}
+                >
                   Thời gian Debate: {formatTime(timeLeft)}
                 </Typography>
+                <Typography 
+                  variant={{ xs: "body1", sm: "h6" }} 
+                  sx={{ fontSize: { xs: '0.875rem', sm: '1.125rem' }, mb: 1 }}
+                >
+                  Phase 2: AI hỏi, SV trả lời
+                </Typography>
+                <Typography 
+                  variant={{ xs: "body2", sm: "subtitle1" }}
+                  sx={{ fontSize: { xs: '0.75rem', sm: '1rem' }, color: 'text.secondary' }}
+                >
+                  Lượt: {turnsPhase2.length}
+                </Typography>
               </Box>
-              <Typography variant="h6" gutterBottom>
-                Phase 2: AI hỏi, SV trả lời
-              </Typography>
-              <Box sx={{ maxHeight: 350, overflowY: 'auto', mb: 2, p: 1, background: '#f8f8f8', borderRadius: 2 }}>
-                {(() => {
-                  console.log('turnsPhase2:', turnsPhase2);
-                  const lastAIQuestion = [...turnsPhase2].reverse().find(t => t.asker === 'ai' && t.question);
-                  console.log('lastAIQuestion:', lastAIQuestion);
-                  if (!lastAIQuestion) {
-                    return <Typography color="text.secondary">Đang lấy câu hỏi từ AI...</Typography>;
-                  }
-                  return (
-                    <>
-                      <Typography variant="subtitle2" color="primary">AI hỏi:</Typography>
-                      <Typography sx={{ whiteSpace: 'pre-line' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(lastAIQuestion.question) }} />
-                    </>
-                  );
-                })()}
-                {turnsPhase2.slice(0, -1).map((turn, idx) => (
-                  <Box key={idx} sx={{ mb: 1, pl: turn.asker === 'ai' ? 0 : 2 }}>
-                    {turn.asker === 'ai' ? (
-                      <>
-                        <Typography variant="subtitle2" color="primary">AI hỏi:</Typography>
-                        <Typography sx={{ whiteSpace: 'pre-line' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.question) }} />
-                      </>
-                    ) : (
-                      <>
-                        <Typography variant="subtitle2" color="secondary">SV trả lời:</Typography>
-                        <Typography sx={{ ml: 2, color: 'text.secondary' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.answer) }} />
-                      </>
-                    )}
+              
+              {/* Phase 2 Conversation History */}
+              <Paper sx={{ p: 2, mb: 2, bgcolor: '#f8f9fa', borderRadius: 2 }}>
+                <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold', mb: 2, textAlign: 'center' }}>
+                  🔄 Cuộc hội thoại Phase 2 (AI chất vấn Team)
+                </Typography>
+                
+                {turnsPhase2.length === 0 ? (
+                  <Typography color="text.secondary" sx={{ textAlign: 'center', fontStyle: 'italic' }}>
+                    Đang tải câu hỏi từ AI...
+                  </Typography>
+                ) : (
+                  <Box sx={{ maxHeight: 500, overflowY: 'auto' }}>
+                    {(() => {
+                      // Group turns into conversation pairs
+                      const conversationPairs = [];
+                      let currentPair = null;
+                      
+                      console.log('🔧 DEBUG: Processing turnsPhase2:', turnsPhase2);
+                      
+                      // 🔧 FIX: Sequential pairing logic - each AI question gets its own turn
+                      const allTurns = turnsPhase2.sort((a, b) => (a.turn_number || 0) - (b.turn_number || 0));
+                      
+                      console.log('🔧 DEBUG: All turns sorted:', allTurns);
+                      
+                      let currentAIQuestion = null;
+                      let turnNumber = 0;
+                      
+                      allTurns.forEach((turn) => {
+                        if (turn.asker === 'ai' && turn.question) {
+                          // New AI question starts a new conversation pair
+                          turnNumber++;
+                          currentAIQuestion = {
+                            turnNumber: turnNumber,
+                            aiQuestion: turn.question,
+                            studentAnswer: null
+                          };
+                          conversationPairs.push(currentAIQuestion);
+                          console.log(`🔧 DEBUG: Created Lượt ${turnNumber} with AI question:`, turn.question);
+                          
+                        } else if (turn.asker === 'student' && turn.answer && turn.answer !== 'null' && turn.answer.trim() !== '' && currentAIQuestion && !currentAIQuestion.studentAnswer) {
+                          // Add student answer to the current (latest) AI question
+                          currentAIQuestion.studentAnswer = turn.answer;
+                          console.log(`🔧 DEBUG: Added student answer to Lượt ${currentAIQuestion.turnNumber}:`, turn.answer);
+                        }
+                      });
+                      
+                      console.log('🔧 DEBUG: Final conversationPairs:', conversationPairs);
+                      
+                      return conversationPairs.map((pair, idx) => (
+                        <Paper key={idx} elevation={2} sx={{ p: 2, mb: 2, bgcolor: 'white', borderRadius: 2 }}>
+                          <Typography variant="subtitle1" color="text.secondary" sx={{ fontWeight: 'bold', mb: 1 }}>
+                            Lượt {pair.turnNumber}:
+                          </Typography>
+                          
+                          {/* AI Question */}
+                          <Box sx={{ mb: 2, p: 1.5, bgcolor: '#e3f2fd', borderRadius: 1, borderLeft: '4px solid #2196f3' }}>
+                            <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 'bold', mb: 1 }}>
+                              🤖 AI hỏi:
+                            </Typography>
+                            <Typography 
+                              variant="body1" 
+                              sx={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}
+                              dangerouslySetInnerHTML={{ __html: formatAIResponse(pair.aiQuestion) }}
+                            />
+                          </Box>
+                          
+                          {/* Student Answer */}
+                          <Box sx={{ p: 1.5, bgcolor: pair.studentAnswer ? '#e8f5e8' : '#fff3e0', borderRadius: 1, borderLeft: `4px solid ${pair.studentAnswer ? '#4caf50' : '#ff9800'}` }}>
+                            <Typography variant="subtitle2" color={pair.studentAnswer ? 'secondary' : 'warning'} sx={{ fontWeight: 'bold', mb: 1 }}>
+                              👥 Team trả lời:
+                            </Typography>
+                            {pair.studentAnswer ? (
+                              <Typography 
+                                variant="body1" 
+                                sx={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}
+                                dangerouslySetInnerHTML={{ __html: formatAIResponse(pair.studentAnswer) }}
+                              />
+                            ) : (
+                              <Typography variant="body1" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                                (Chưa trả lời)
+                              </Typography>
+                            )}
+                          </Box>
+                        </Paper>
+                      ));
+                    })()}
                   </Box>
-                ))}
-              </Box>
-              {turnsPhase2.length > 0 && turnsPhase2[turnsPhase2.length-1].asker === 'ai' && (
-                <Box>
-                  <TextField
-                    fullWidth
-                    multiline
-                    rows={2}
-                    label="Câu trả lời của bạn"
-                    value={currentAnswer}
-                    onChange={e => setCurrentAnswer(e.target.value)}
-                    sx={{ mb: 2 }}
-                    onPaste={e => { e.preventDefault(); return false; }}
-                    onCopy={e => { e.preventDefault(); return false; }}
-                    onCut={e => { e.preventDefault(); return false; }}
-                    helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
-                  />
+                )}
+              </Paper>
+              
+              {/* Input for current answer */}
+              {turnsPhase2.length > 0 && (() => {
+                const lastTurn = turnsPhase2[turnsPhase2.length - 1];
+                const hasUnansweredQuestion = lastTurn.asker === 'ai' && lastTurn.question && !lastTurn.answer;
+                return hasUnansweredQuestion && (
+                  <Box sx={{ mb: 2 }}>
+                    <TextField
+                      fullWidth
+                      multiline
+                      rows={5}
+                      label="Câu trả lời của Team"
+                      value={currentAnswer}
+                      onChange={e => setCurrentAnswer(e.target.value)}
+                      sx={{ 
+                        mb: 2,
+                        '& .MuiInputBase-input': {
+                          fontSize: '1.1rem',
+                          lineHeight: 1.6
+                        },
+                        '& .MuiInputLabel-root': {
+                          fontSize: '1.1rem'
+                        }
+                      }}
+                      onPaste={e => { e.preventDefault(); return false; }}
+                      onCopy={e => { e.preventDefault(); return false; }}
+                      onCut={e => { e.preventDefault(); return false; }}
+                      helperText="Chức năng sao chép, cắt, dán đã được vô hiệu hóa."
+                    />
+                    <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
+                      <Button
+                        variant="contained"
+                        onClick={handleSendStudentTurn}
+                        disabled={turnLoading || !currentAnswer.trim()}
+                        sx={{ 
+                          px: { xs: 2, sm: 3 },
+                          py: { xs: 1, sm: 1.5 },
+                          fontSize: { xs: '0.875rem', sm: '1rem' },
+                          width: { xs: '100%', sm: 'auto' }
+                        }}
+                      >
+                        {turnLoading ? 'Đang gửi...' : 'Gửi trả lời'}
+                      </Button>
+                    </Box>
+                  </Box>
+                );
+              })()}
+              
+              {/* 🔧 FIX: Request Next Question button - independent of hasUnansweredQuestion */}
+              {canRequestNextQuestion && (
+                <Box sx={{ mb: 2, textAlign: 'center' }}>
                   <Button
-                    variant="contained"
-                    onClick={handleSendStudentTurn}
-                    disabled={turnLoading || !currentAnswer.trim()}
+                    variant="outlined"
+                    color="primary"
+                    onClick={handleRequestNextQuestion}
+                    disabled={turnLoading}
+                    sx={{ 
+                      px: { xs: 2, sm: 3 },
+                      py: { xs: 1, sm: 1.5 },
+                      fontSize: { xs: '0.875rem', sm: '1rem' },
+                      width: { xs: '100%', sm: 'auto' }
+                    }}
                   >
-                    Gửi trả lời & Nhận câu hỏi AI tiếp theo
+                    {turnLoading ? 'Đang tải...' : 'Yêu cầu câu hỏi tiếp theo'}
                   </Button>
                 </Box>
               )}
-              <Box sx={{ mt: 2 }}>
-                <Typography>Số lượt debate Phase 2: {turnsPhase2.length}</Typography>
+              
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f0f0', borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Số lượt debate Phase 2: {turnsPhase2.length}
+                </Typography>
                 <Button
                   variant="contained"
                   color="success"
-                  sx={{ mt: 1, ml: 1 }}
+                  sx={{ 
+                    mt: 1, 
+                    px: { xs: 2, sm: 3 },
+                    py: { xs: 1, sm: 1.5 },
+                    fontSize: { xs: '0.875rem', sm: '1rem' },
+                    width: { xs: '100%', sm: 'auto' }
+                  }}
                   onClick={handleGoToPhase3}
                 >
                   Chuyển sang Phase 3 (SV hỏi)
@@ -792,76 +1445,164 @@ function DebateRoom() {
 
           {phase === 3 && (
             <Box>
-              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center' }}>
-                <Typography variant="h5" color={timeLeft < 60 ? 'error' : 'primary'}>
+              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, bgcolor: 'white' }}>
+                <Typography 
+                  variant={{ xs: "h6", sm: "h5" }} 
+                  color={timeLeft < 60 ? 'error' : 'primary'}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.5rem' }, mb: 1 }}
+                >
                   Thời gian Debate: {formatTime(timeLeft)}
                 </Typography>
+                <Typography 
+                  variant={{ xs: "body1", sm: "h6" }} 
+                  sx={{ fontSize: { xs: '0.875rem', sm: '1.125rem' }, mb: 1 }}
+                >
+                  Phase 3: SV hỏi, AI trả lời
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
+                  <Typography 
+                    variant={{ xs: "body2", sm: "subtitle1" }}
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' }, color: 'text.secondary' }}
+                  >
+                    Phase 2: {turnsPhase2.length} lượt
+                  </Typography>
+                  <Typography 
+                    variant={{ xs: "body2", sm: "subtitle1" }}
+                    sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' }, color: 'text.secondary' }}
+                  >
+                    Phase 3: {turnsPhase3.length} lượt
+                  </Typography>
+                </Box>
               </Box>
-              <Typography variant="h6" gutterBottom>
-                Phase 3: SV hỏi, AI trả lời
-              </Typography>
-              <Box sx={{ maxHeight: 350, overflowY: 'auto', mb: 2, p: 1, background: '#f8f8f8', borderRadius: 2 }}>
-                {/* Hiển thị lịch sử Phase 2 */}
-                {turnsPhase2.length > 0 && (
-                  <>
-                    <Typography variant="subtitle1" color="primary" sx={{ fontWeight: 'bold', mb: 1 }}>
-                      Lịch sử Phase 2 (AI hỏi - SV trả lời):
-                    </Typography>
-                    {turnsPhase2.map((turn, idx) => (
-                      <Box key={`phase2-${idx}`} sx={{ mb: 1, pl: turn.asker === 'ai' ? 0 : 2 }}>
-                        {turn.asker === 'ai' ? (
-                          <>
-                            <Typography variant="subtitle2" color="primary">AI hỏi:</Typography>
-                            <Typography sx={{ whiteSpace: 'pre-line' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.question) }} />
-                          </>
-                        ) : (
-                          <>
-                            <Typography variant="subtitle2" color="secondary">SV trả lời:</Typography>
-                            <Typography sx={{ ml: 2, color: 'text.secondary' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.answer) }} />
-                          </>
-                        )}
-                      </Box>
-                    ))}
-                    <Divider sx={{ my: 2 }} />
-                  </>
-                )}
+              
+              {/* Phase 2 Summary - Collapsed */}
+              {turnsPhase2.length > 0 && (
+                <Paper sx={{ p: 2, mb: 2, bgcolor: '#fff3e0', borderRadius: 2 }}>
+                  <Typography variant="subtitle1" color="orange" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    📋 Tóm tắt Phase 2 ({turnsPhase2.length} lượt - AI hỏi, SV trả lời):
+                  </Typography>
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {(() => {
+                      const conversationPairs = [];
+                      let currentPair = null;
+                      
+                      turnsPhase2.forEach((turn, idx) => {
+                        if (turn.asker === 'ai' && turn.question) {
+                          currentPair = {
+                            turnNumber: Math.floor(idx / 2) + 1,
+                            aiQuestion: turn.question,
+                            studentAnswer: null
+                          };
+                          conversationPairs.push(currentPair);
+                        } else if (turn.asker === 'student' && turn.answer && currentPair) {
+                          currentPair.studentAnswer = turn.answer;
+                        }
+                      });
+                      
+                      return conversationPairs.map((pair, idx) => (
+                        <Paper key={idx} elevation={1} sx={{ p: 1, mb: 1, bgcolor: 'white', borderRadius: 1 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
+                            Lượt {pair.turnNumber}: 
+                          </Typography>
+                          <Typography variant="body2" sx={{ display: 'inline', ml: 0.5 }}>
+                            🤖 "{pair.aiQuestion?.substring(0, 60)}..." 
+                            → 👥 "{pair.studentAnswer ? pair.studentAnswer.substring(0, 60) + '...' : '(Chưa trả lời)'}"
+                          </Typography>
+                        </Paper>
+                      ));
+                    })()}
+                  </Box>
+                </Paper>
+              )}
+              
+              {/* Phase 3 Conversation */}
+              <Paper sx={{ p: 2, mb: 2, bgcolor: '#e8f5e8', borderRadius: 2 }}>
+                <Typography variant="h6" color="secondary" sx={{ fontWeight: 'bold', mb: 2, textAlign: 'center' }}>
+                  🔄 Lượt hỏi đáp Phase 3 (Team chất vấn AI)
+                </Typography>
                 
-                {/* Hiển thị lịch sử Phase 3 */}
-                {turns.length === 0 && (
-                  <Typography color="text.secondary">Chưa có lượt debate Phase 3 nào. Sinh viên sẽ đặt câu hỏi trước.</Typography>
+                {turnsPhase3.length === 0 ? (
+                  <Typography color="text.secondary" sx={{ textAlign: 'center', fontStyle: 'italic' }}>
+                    Chưa có câu hỏi nào. Hãy đặt câu hỏi đầu tiên cho AI!
+                  </Typography>
+                ) : (
+                  <Box sx={{ maxHeight: 500, overflowY: 'auto' }}>
+                    {(() => {
+                      // Group turns into pairs: student question + AI answer
+                      const conversationPairs = [];
+                      let currentQuestion = null;
+                      
+                      turnsPhase3.forEach((turn) => {
+                        if (turn.asker === 'student' && turn.question) {
+                          // Student question starts a new pair
+                          currentQuestion = {
+                            studentQuestion: turn.question,
+                            aiAnswer: null
+                          };
+                          conversationPairs.push(currentQuestion);
+                        } else if (turn.asker === 'ai' && turn.answer && currentQuestion) {
+                          // AI answer completes the current pair
+                          currentQuestion.aiAnswer = turn.answer;
+                        }
+                      });
+                      
+                      return conversationPairs.map((pair, idx) => (
+                        <Paper key={idx} elevation={2} sx={{ p: 2, mb: 2, bgcolor: 'white', borderRadius: 2 }}>
+                          {/* Student Question */}
+                          <Box sx={{ mb: 2, p: 1.5, bgcolor: '#e8f5e8', borderRadius: 1, borderLeft: '4px solid #4caf50' }}>
+                            <Typography variant="subtitle2" color="secondary" sx={{ fontWeight: 'bold', mb: 1 }}>
+                              👥 Team hỏi:
+                            </Typography>
+                            <Typography 
+                              variant="body1" 
+                              sx={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}
+                              dangerouslySetInnerHTML={{ __html: formatAIResponse(pair.studentQuestion) }}
+                            />
+                          </Box>
+                          
+                          {/* AI Answer */}
+                          <Box sx={{ p: 1.5, bgcolor: pair.aiAnswer ? '#e3f2fd' : '#fff3e0', borderRadius: 1, borderLeft: `4px solid ${pair.aiAnswer ? '#2196f3' : '#ff9800'}` }}>
+                            <Typography variant="subtitle2" color={pair.aiAnswer ? 'primary' : 'warning'} sx={{ fontWeight: 'bold', mb: 1 }}>
+                              🤖 AI trả lời:
+                            </Typography>
+                            {pair.aiAnswer ? (
+                              <Typography 
+                                variant="body1" 
+                                sx={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}
+                                dangerouslySetInnerHTML={{ __html: formatAIResponse(pair.aiAnswer) }}
+                              />
+                            ) : (
+                              <Typography variant="body1" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                                (Đang chờ AI trả lời...)
+                              </Typography>
+                            )}
+                          </Box>
+                        </Paper>
+                      ));
+                    })()}
+                  </Box>
                 )}
-                {turns.length > 0 && (
-                  <>
-                    <Typography variant="subtitle1" color="secondary" sx={{ fontWeight: 'bold', mb: 1 }}>
-                      Lịch sử Phase 3 (SV hỏi - AI trả lời):
-                    </Typography>
-                    {turns.map((turn, idx) => (
-                      <Box key={`phase3-${idx}`} sx={{ mb: 1, pl: turn.asker === 'student' ? 0 : 2 }}>
-                        {turn.asker === 'student' ? (
-                          <>
-                            <Typography variant="subtitle2" color="secondary">SV hỏi:</Typography>
-                            <Typography sx={{ whiteSpace: 'pre-line' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.question) }} />
-                          </>
-                        ) : (
-                          <>
-                            <Typography variant="subtitle2" color="primary">AI trả lời:</Typography>
-                            <Typography sx={{ ml: 2, color: 'text.secondary' }} dangerouslySetInnerHTML={{ __html: formatAIResponse(turn.answer) }} />
-                          </>
-                        )}
-                      </Box>
-                    ))}
-                  </>
-                )}
-              </Box>
-              <Box>
+              </Paper>
+              
+              {/* Input for new question */}
+              <Box sx={{ mb: 2 }}>
                 <TextField
                   fullWidth
                   multiline
-                  rows={2}
-                  label="Câu hỏi của bạn cho AI"
+                  rows={4}
+                  label="Câu hỏi của Team cho AI"
                   value={currentAnswer}
                   onChange={e => setCurrentAnswer(e.target.value)}
-                  sx={{ mb: 2 }}
+                  sx={{ 
+                    mb: 2,
+                    '& .MuiInputBase-input': {
+                      fontSize: '1.1rem',
+                      lineHeight: 1.6
+                    },
+                    '& .MuiInputLabel-root': {
+                      fontSize: '1.1rem'
+                    }
+                  }}
                   onPaste={e => { e.preventDefault(); return false; }}
                   onCopy={e => { e.preventDefault(); return false; }}
                   onCut={e => { e.preventDefault(); return false; }}
@@ -871,23 +1612,40 @@ function DebateRoom() {
                   variant="contained"
                   onClick={() => handleSendStudentQuestion(currentAnswer)}
                   disabled={turnLoading || !currentAnswer.trim()}
+                  sx={{ 
+                    px: { xs: 2, sm: 3 },
+                    py: { xs: 1, sm: 1.5 },
+                    fontSize: { xs: '0.875rem', sm: '1rem' },
+                    width: { xs: '100%', sm: 'auto' }
+                  }}
                 >
-                  Gửi câu hỏi & Nhận câu trả lời từ AI
+                  {turnLoading ? 'Đang gửi...' : 'Gửi câu hỏi & Nhận câu trả lời từ AI'}
                 </Button>
               </Box>
-              <Box sx={{ mt: 2 }}>
-                <Typography>Số lượt debate Phase 2: {turnsPhase2.length}</Typography>
-                <Typography>Số lượt debate Phase 3: {turns.length}</Typography>
-                <Typography color="primary" sx={{ mt: 1 }}>
-                  Số lượt hỏi còn lại trong Phase 3: {Math.max(0, 5 - turns.filter(t => t.asker === 'student' && t.question && !t.answer).length)}
+              
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f0f0', borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Số lượt debate Phase 2: {turnsPhase2.length}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Số lượt debate Phase 3: {turnsPhase3.length}
+                </Typography>
+                <Typography variant="body2" color="primary" sx={{ mt: 1 }}>
+                  Số lượt hỏi còn lại trong Phase 3: {Math.max(0, 5 - turnsPhase3.filter(t => t.asker === 'student' && t.question && !t.answer).length)}
                 </Typography>
                 <Button
                   variant="contained"
                   color="success"
-                  sx={{ mt: 1, ml: 1 }}
+                  sx={{ 
+                    mt: 1, 
+                    px: { xs: 2, sm: 3 },
+                    py: { xs: 1, sm: 1.5 },
+                    fontSize: { xs: '0.875rem', sm: '1rem' },
+                    width: { xs: '100%', sm: 'auto' }
+                  }}
                   onClick={() => {
                     setPhase(4);
-                    handleEvaluation(); // Gọi luôn khi chuyển phase
+                    // Chỉ chuyển phase, không gọi evaluation
                   }}
                 >
                   Chuyển sang Phase 4 (Kết luận)
@@ -896,39 +1654,177 @@ function DebateRoom() {
             </Box>
           )}
 
-          {phase === 4 && !evaluation && !loading && (
-            <Box sx={{ textAlign: 'center', p: 4 }}>
-              <Typography variant="h6" color="error" gutterBottom>
-                Không thể tải kết quả đánh giá
-              </Typography>
-              <Typography variant="body1" sx={{ mb: 3 }}>
-                Phiên debate có thể đã hết hạn hoặc không tồn tại.
-              </Typography>
-              <Button
-                variant="contained"
-                onClick={() => navigate('/')}
+          {phase === 4 && !evaluation && (
+            <Paper sx={{ p: 4, mt: 3, borderRadius: '16px' }}>
+              <Box sx={{ mb: 2, p: 2, border: '1px solid #ddd', borderRadius: 2, textAlign: 'center', position: 'sticky', top: 0, zIndex: 10, bgcolor: 'white' }}>
+                <Typography 
+                  variant={{ xs: "h6", sm: "h5" }} 
+                  color={timeLeft < 60 ? 'error' : 'primary'}
+                  sx={{ fontSize: { xs: '1.25rem', sm: '1.5rem' }, mb: 1 }}
+                >
+                  ⏳ Thời gian còn lại: {formatTime(timeLeft)}
+                </Typography>
+                {timeLeft <= 0 && (
+                  <Typography color="error" variant="subtitle1">
+                    Hết giờ! Vui lòng nộp kết luận ngay.
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ 
+                p: 3, 
+                mb: 3, 
+                bgcolor: stance === 'ĐỒNG TÌNH' ? '#e8f5e9' : '#ffebee',
+                borderRadius: 2,
+                border: `2px solid ${stance === 'ĐỒNG TÌNH' ? '#4caf50' : '#f44336'}`
+              }}>
+                <Typography variant="h6" align="center" sx={{ mb: 2 }}>
+                  Chủ đề: {topic}
+                </Typography>
+                
+                <Typography variant="h6" align="center" sx={{
+                  color: stance === 'ĐỒNG TÌNH' ? '#2e7d32' : '#d32f2f',
+                  fontWeight: 'bold'
+                }}>
+                  Lập trường của nhóm: {stance} {stance === 'ĐỒNG TÌNH' ? '✅' : '❌'}
+                </Typography>
+              </Box>
+
+              <Typography 
+                variant={{ xs: "h6", sm: "h5" }} 
+                gutterBottom 
+                align="center" 
+                color="primary" 
+                sx={{ 
+                  fontWeight: 600,
+                  fontSize: { xs: '1.25rem', sm: '1.5rem' }
+                }}
               >
-                Về trang chủ
-              </Button>
-            </Box>
+                🎯 Phase 4: Tổng kết luận điểm
+              </Typography>
+              <Typography variant="body1" sx={{ mb: 3, textAlign: 'center', color: '#666' }}>
+                Trình bày tại sao quan điểm {stance} của nhóm là đúng đắn
+              </Typography>
+
+              <TextField
+                fullWidth
+                multiline
+                rows={6}
+                label={`Kết luận ${stance} của nhóm`}
+                value={studentArguments[0] || ''}
+                onChange={(e) => {
+                  const newArgs = [...studentArguments];
+                  newArgs[0] = e.target.value;
+                  setStudentArguments(newArgs);
+                }}
+                sx={{ mb: 3 }}
+                disabled={timeLeft <= 0}
+                helperText="Tối thiểu 100 ký tự"
+              />
+
+              {/* Phase 4 Action Buttons */}
+              <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', sm: 'row' }, mb: 3 }}>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  onClick={handleAICounterConclusion}
+                  disabled={
+                    loading || 
+                    !isValidContent(studentArguments[0]) || 
+                    (studentArguments[0] && studentArguments[0].length < 100)
+                  }
+                  sx={{ flex: 1 }}
+                >
+                  🤖 Lấy luận điểm phản bác của AI
+                </Button>
+                
+                <Button
+                  variant="contained"
+                  color="success"
+                  onClick={handleEvaluation}
+                  disabled={
+                    loading || 
+                    !isValidContent(studentArguments[0]) || 
+                    (studentArguments[0] && studentArguments[0].length < 100)
+                  }
+                  sx={{ flex: 1 }}
+                >
+                  📊 Chấm điểm Debate
+                </Button>
+              </Box>
+
+              {/* Display AI Counter Arguments if available */}
+              {aiCounterArguments && aiCounterArguments.length > 0 && (
+                <Paper sx={{ p: 3, mb: 3, bgcolor: '#ffebee', borderRadius: 2 }}>
+                  <Typography variant="h6" color="error" gutterBottom sx={{ fontWeight: 'bold' }}>
+                    🤖 Luận điểm phản bác của AI:
+                  </Typography>
+                  {aiCounterArguments.map((arg, idx) => (
+                    <Typography 
+                      key={idx} 
+                      variant="body1" 
+                      sx={{ mb: 2, lineHeight: 1.6 }}
+                      dangerouslySetInnerHTML={{ __html: formatAIResponse(arg) }}
+                    />
+                  ))}
+                </Paper>
+              )}
+            </Paper>
           )}
 
-          {phase === 4 && evaluation && (
+          {(phase === 4 || phase === 5) && evaluation && (
             <Paper sx={{ p: { xs: 2, md: 4 }, mt: 4, background: 'rgba(255, 255, 255, 0.98)', borderRadius: '20px', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)' }}>
               <Typography variant="h4" gutterBottom sx={{ fontWeight: 600, color: '#1d1d1f', textAlign: 'center' }}>
                 Kết quả Debate Chi tiết
               </Typography>
-              
-              {/* Hiển thị bảng điểm chi tiết theo từng giai đoạn */}
+
+              {/* Warning box about submitting results */}
+              <Box sx={{ 
+                mb: 4, 
+                p: 3, 
+                bgcolor: '#e3f2fd', 
+                borderRadius: 2,
+                border: '1px solid #2196f3',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 2
+              }}>
+                <Box sx={{ 
+                  width: 40, 
+                  height: 40, 
+                  borderRadius: '50%', 
+                  bgcolor: '#2196f3',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontSize: '20px'
+                }}>
+                  📋
+                </Box>
+                <Box>
+                  <Typography variant="subtitle1" sx={{ color: '#1565c0', fontWeight: 600, mb: 0.5 }}>
+                    Lưu ý quan trọng về nộp bài!
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#0d47a1' }}>
+                    Để tự động nộp bài và lưu kết quả debate của bạn, vui lòng bấm nút "Về trang chủ" ở cuối trang. 
+                    Không nên thoát trực tiếp hoặc đóng trình duyệt mà không bấm nút này.
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Existing evaluation display */}
               {evaluation.scores && Object.entries(evaluation.scores).map(([phase, scores]) => {
-                if (phase === 'phase1' || phase === 'phase2A' || phase === 'phase2B' || phase === 'phase3') {
+                if (phase === 'phase1' || phase === 'phase2' || phase === 'phase3' || phase === 'phase4') {
                   const phaseTitle = phase === 'phase1' ? 'Giai đoạn 1: Luận điểm ban đầu' :
-                                   phase === 'phase2A' ? 'Giai đoạn 2A: Phản biện AI' :
-                                   phase === 'phase2B' ? 'Giai đoạn 2B: Phản biện SV' :
-                                   'Giai đoạn 3: Kết luận & Tổng hợp';
+                                   phase === 'phase2' ? 'Giai đoạn 2: AI chất vấn SV' :
+                                   phase === 'phase3' ? 'Giai đoạn 3: SV chất vấn AI' :
+                                   'Giai đoạn 4: Tổng kết luận điểm';
                   
-                  const phaseTotal = Object.values(scores).reduce((sum, score) => sum + (parseInt(score) || 0), 0);
-                  const maxScore = phase === 'phase1' ? 25 : (phase === 'phase3' ? 25 : 24); // Tổng điểm tối đa của mỗi giai đoạn
+                  // Tính tổng điểm cho phase hiện tại
+                  const phaseScores = Object.values(scores || {});
+                  const phaseTotal = phaseScores.reduce((sum, score) => sum + (parseInt(score) || 0), 0);
+                  const maxScore = 25; // Mỗi phase 25 điểm
                   
                   return (
                     <Box key={phase} sx={{ mb: 3, p: 2, border: '1px solid #ddd', borderRadius: 2 }}>
@@ -977,72 +1873,103 @@ function DebateRoom() {
                         </>
                       )}
                       
-                      {phase === 'phase2A' && (
+                      {phase === 'phase2' && (
                         <>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Hiểu biết & nhận thức</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2A.1'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['2.1'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Tư duy phản biện</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2A.2'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['2.2'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Ngôn ngữ & thuật ngữ</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2A.3'] || 0}</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['2.3'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Chiến lược & điều hướng</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2A.4'] || 0}</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['2.4'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Văn hóa – xã hội</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2A.5'] || 0}</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>3</Typography>
-                          </Box>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
-                            <Typography>Đạo đức & trung thực</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2A.6'] || 0}</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['2.5'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                         </>
                       )}
                       
-                      {phase === 'phase2B' && (
+
+                      {phase === 'phase3' && (
                         <>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Hiểu biết & nhận thức</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2B.1'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['3.1'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Tư duy phản biện</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2B.2'] || 0}</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>6</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['3.2'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>5</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Ngôn ngữ & thuật ngữ</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2B.3'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['3.3'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>4</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Chiến lược & điều hướng</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2B.4'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['3.4'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>4</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Văn hóa – xã hội</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2B.5'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['3.5'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>3</Typography>
                           </Box>
                           <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
                             <Typography>Đạo đức & đối thoại</Typography>
-                            <Typography sx={{ textAlign: 'center' }}>{scores['2B.6'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['3.6'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                          </Box>
+                        </>
+                      )}
+
+                      {phase === 'phase4' && (
+                        <>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                            <Typography>Hiểu biết & hệ thống</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['4.1'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>5</Typography>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                            <Typography>Tư duy phân biện</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['4.2'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>5</Typography>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                            <Typography>Ngôn ngữ lập luận</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['4.3'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                            <Typography>Sáng tạo & thuyết phục</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['4.4'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                            <Typography>Văn hóa - xã hội</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['4.5'] || 0}</Typography>
                             <Typography sx={{ textAlign: 'center' }}>3</Typography>
+                          </Box>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 1, mb: 1 }}>
+                            <Typography>Đạo đức & trách nhiệm</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>{scores['4.6'] || 0}</Typography>
+                            <Typography sx={{ textAlign: 'center' }}>4</Typography>
                           </Box>
                         </>
                       )}
@@ -1061,7 +1988,7 @@ function DebateRoom() {
               {/* Tổng điểm toàn bộ */}
               {evaluation.scores && (() => {
                 const totalScore = Object.entries(evaluation.scores)
-                  .filter(([phase]) => phase === 'phase1' || phase === 'phase2A' || phase === 'phase2B' || phase === 'phase3')
+                  .filter(([phase]) => phase === 'phase1' || phase === 'phase2' || phase === 'phase3' || phase === 'phase4')
                   .reduce((total, [_, scores]) => {
                     return total + Object.values(scores).reduce((sum, score) => sum + (parseInt(score) || 0), 0);
                   }, 0);

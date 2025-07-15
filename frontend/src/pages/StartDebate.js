@@ -32,7 +32,7 @@ const StartDebate = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const [formData, setFormData] = useState({
-    teamName: '',
+    teamId: '',
     member1: '',
     member2: '',
     member3: '',
@@ -45,8 +45,7 @@ const StartDebate = () => {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   const courses = [
-    { value: 'MLN111', label: 'MLN111 - Triết học Marx - Lenin' },
-    { value: 'MLN122', label: 'MLN122 - Kinh tế Chính trị Marx - Lenin' }
+    { value: 'MLN111+MLN122', label: 'MLN111+MLN122 - Triết học & Kinh tế Chính trị Marx - Lenin' }
   ];
 
   const handleInputChange = (e) => {
@@ -61,20 +60,79 @@ const StartDebate = () => {
     event.preventDefault();
     setLoading(true);
     setError(null);
+    
+    console.log('🚀 Starting handleSubmit...');
+    console.log('Form data:', formData);
+    
     try {
-      const response = await axios.post("http://localhost:5000/api/debate/start", {
-        team_id: formData.teamName,
-        members: [formData.member1, formData.member2, formData.member3, formData.member4, formData.member5].map(m => m.trim()),
+      // Filter out empty members
+      const members = [formData.member1, formData.member2, formData.member3, formData.member4, formData.member5]
+        .map(m => m.trim())
+        .filter(m => m.length > 0);
+      
+      console.log('📝 Filtered members:', members);
+      
+      if (!formData.teamId.trim()) {
+        setError('Vui lòng nhập Team ID');
+        setLoading(false);
+        return;
+      }
+      
+      if (members.length === 0) {
+        setError('Vui lòng nhập ít nhất một thành viên');
+        setLoading(false);
+        return;
+      }
+      
+      if (!formData.course) {
+        setError('Vui lòng chọn môn học');
+        setLoading(false);
+        return;
+      }
+      
+      const requestData = {
+        members: members,
         course_code: formData.course,
-      });
-      const { team_id } = response.data.data;
-      setSnackbar({ open: true, message: 'Tạo debate thành công!', severity: 'success' });
-      setTimeout(() => navigate(`/debate/${team_id}`), 1200);
+        team_id: formData.teamId.trim(), // Team ID is now required
+      };
+      
+      console.log('📤 Sending request:', requestData);
+      
+      const response = await axios.post("https://mlndebate.io.vn/api/debate/start", requestData);
+      
+      console.log('📥 Response received:', response);
+      console.log('📊 Response data:', response.data);
+      console.log('📊 Response status:', response.status);
+      
+      // Backend returns: { success: true, team_id: "TEAM001", topic: "...", message: "..." }
+      const { success, team_id, topic } = response.data;
+      
+      if (success && team_id) {
+        console.log('✅ Debate started successfully:', { team_id, topic, members });
+        setSnackbar({ 
+          open: true, 
+          message: `Tạo debate thành công! Team ID: ${team_id} - Chủ đề: ${topic}`, 
+          severity: 'success' 
+        });
+        setTimeout(() => {
+          console.log('🔄 Navigating to:', `/debate/${team_id}`);
+          navigate(`/debate/${team_id}`);
+        }, 1200);
+      } else {
+        console.log('❌ Invalid response:', response.data);
+        setError('Server response invalid');
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to start debate. Please try again.');
-      setSnackbar({ open: true, message: err.response?.data?.detail || 'Tạo debate thất bại!', severity: 'error' });
+      console.error('❌ Start debate error:', err);
+      console.error('❌ Error response:', err.response);
+      console.error('❌ Error message:', err.message);
+      
+      const errorMsg = err.response?.data?.detail || err.message || 'Failed to start debate. Please try again.';
+      setError(errorMsg);
+      setSnackbar({ open: true, message: errorMsg, severity: 'error' });
     } finally {
       setLoading(false);
+      console.log('🏁 handleSubmit finished');
     }
   };
 
@@ -82,12 +140,12 @@ const StartDebate = () => {
     {
       icon: <School sx={{ fontSize: 30, color: '#007AFF' }} />,
       title: "Đề tài đa dạng",
-      description: "Chọn từ kho đề tài phong phú của MLN111 và MLN122"
+      description: "Chọn từ kho đề tài phong phú của MLN111+MLN122"
     },
     {
       icon: <Group sx={{ fontSize: 30, color: '#5856D6' }} />,
       title: "Làm việc nhóm",
-      description: "Hợp tác với 3 thành viên để đạt kết quả tốt nhất"
+      description: "Hợp tác với 5 thành viên để đạt kết quả tốt nhất"
     },
     {
       icon: <Timer sx={{ fontSize: 30, color: '#FF9500' }} />,
@@ -125,29 +183,58 @@ const StartDebate = () => {
         filter: 'blur(40px)'
       }} />
 
-      <Container maxWidth="lg" sx={{ position: 'relative', zIndex: 1, py: 4 }}>
+              <Container maxWidth="lg" sx={{ 
+          position: 'relative', 
+          zIndex: 1, 
+          py: { xs: 2, sm: 3, md: 4 },
+          px: { xs: 2, sm: 3, md: 4 }
+        }}>
         {/* Header */}
-        <Box sx={{ textAlign: 'center', mb: 6, color: theme.palette.text.primary }}>
+        <Box sx={{ 
+          textAlign: 'center', 
+          mb: 6, 
+          color: theme.palette.text.primary,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 2
+        }}>
           <Typography
-            variant="h2"
+            variant={{ xs: "h4", sm: "h3", md: "h2" }}
             sx={{
               fontWeight: 700,
-              mb: 2,
+              fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' },
               background: 'linear-gradient(135deg, #ffffff 0%, #f0f0f0 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
-              color: theme.palette.text.primary
+              color: theme.palette.text.primary,
+              lineHeight: 1.2,
+              display: 'block',
+              width: '100%'
             }}
           >
             Bắt đầu tranh luận
           </Typography>
-          <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300, color: theme.palette.text.secondary }}>
+          <Typography 
+            variant={{ xs: "body1", sm: "h6" }} 
+            sx={{ 
+              opacity: 0.9, 
+              fontWeight: 300, 
+              color: theme.palette.text.secondary,
+              fontSize: { xs: '1rem', sm: '1.25rem' },
+              px: { xs: 2, sm: 0 },
+              lineHeight: 1.4,
+              display: 'block',
+              width: '100%',
+              mt: 1
+            }}
+          >
             Điền thông tin đội để bắt đầu cuộc thi
           </Typography>
         </Box>
 
-        <Grid container spacing={4}>
+        <Grid container spacing={{ xs: 2, sm: 3, md: 4 }}>
           {/* Form Section */}
           <Grid item xs={12} lg={7}>
             <Card sx={{
@@ -158,8 +245,16 @@ const StartDebate = () => {
               boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
               color: theme.palette.text.primary
             }}>
-              <CardContent sx={{ p: 4 }}>
-                <Typography variant="h4" sx={{ mb: 3, fontWeight: 600, color: theme.palette.text.primary }}>
+              <CardContent sx={{ p: { xs: 3, sm: 4, md: 5 } }}>
+                <Typography 
+                  variant={{ xs: "h5", sm: "h4" }} 
+                  sx={{ 
+                    mb: 3, 
+                    fontWeight: 600, 
+                    color: theme.palette.text.primary,
+                    fontSize: { xs: '1.5rem', sm: '2rem' }
+                  }}
+                >
                   Thông tin đội
                 </Typography>
 
@@ -171,12 +266,14 @@ const StartDebate = () => {
 
                 <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <TextField
-                    name="teamName"
-                    label="Tên đội"
-                    value={formData.teamName}
+                    name="teamId"
+                    label="Team ID *"
+                    value={formData.teamId}
                     onChange={handleInputChange}
                     fullWidth
                     required
+                    placeholder="VD: NHOM1, TEAM-A, MLN-GROUP1"
+                    helperText="Nhập Team ID duy nhất cho nhóm của bạn"
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         borderRadius: '12px',
@@ -345,6 +442,44 @@ const StartDebate = () => {
                     endIcon={loading ? <CircularProgress size={20} color="inherit" /> : <PlayArrow />}
                   >
                     {loading ? 'Đang tạo phiên...' : 'Bắt đầu tranh luận'}
+                  </Button>
+                  
+                  {/* Debug Test Button */}
+                  <Button
+                    onClick={async () => {
+                      console.log('🧪 Direct API Test - Starting...');
+                      try {
+                        const testData = {
+                          members: ["Test User Debug"],
+                          course_code: "MLN111+MLN122"
+                        };
+                        console.log('🧪 Test request:', testData);
+                        
+                        const response = await axios.post("https://mlndebate.io.vn/api/debate/start", testData);
+                        console.log('🧪 Test response:', response);
+                        console.log('🧪 Test success:', response.data);
+                        
+                        alert(`✅ API TEST SUCCESS:\n${JSON.stringify(response.data, null, 2)}`);
+                      } catch (err) {
+                        console.error('🧪 Test error:', err);
+                        console.error('🧪 Test error response:', err.response);
+                        alert(`❌ API TEST ERROR:\n${err.message}\nResponse: ${err.response?.data?.detail || 'No detail'}`);
+                      }
+                    }}
+                    variant="outlined"
+                    size="small"
+                    sx={{ 
+                      mt: 1, 
+                      fontSize: '12px',
+                      borderColor: '#007AFF',
+                      color: '#007AFF',
+                      '&:hover': {
+                        borderColor: '#0056CC',
+                        backgroundColor: 'rgba(0, 122, 255, 0.04)'
+                      }
+                    }}
+                  >
+                    🧪 Test API Debug
                   </Button>
                 </Box>
               </CardContent>

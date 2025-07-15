@@ -52,4 +52,86 @@
   .logo-container {
     margin: 0 8px;
   }
+}
+
+/* Balanced responsive design */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Mobile-specific improvements */
+@media (max-width: 599px) {
+  body {
+    overflow-x: hidden;
+  }
+  
+  .MuiContainer-root {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+  
+  .MuiPaper-root {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+  
+  /* Ensure buttons are touch-friendly */
+  .MuiButton-root {
+    min-height: 44px;
+    padding: 12px 16px;
+  }
+  
+  /* Improve form inputs on mobile */
+  .MuiTextField-root .MuiInputBase-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+}
+
+/* Mobile typography fixes */
+@media (max-width: 600px) {
+  .MuiTypography-h4 {
+    font-size: 1.5rem !important;
+  }
+  
+  .MuiTypography-h5 {
+    font-size: 1.25rem !important;
+  }
+  
+  .MuiTypography-h6 {
+    font-size: 1.1rem !important;
+  }
+  
+  .MuiTypography-body1 {
+    font-size: 0.875rem !important;
+  }
+  
+  .MuiTypography-body2 {
+    font-size: 0.75rem !important;
+  }
+  
+  .MuiButton-root {
+    font-size: 0.875rem !important;
+    padding: 8px 16px !important;
+  }
+  
+  .MuiTextField-root {
+    margin-bottom: 12px !important;
+  }
+  
+  .MuiInputBase-input {
+    font-size: 0.875rem !important;
+  }
 } 

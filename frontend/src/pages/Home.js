@@ -8,8 +8,7 @@ import {
   Grid, 
   Card, 
   CardContent,
-  Chip,
-  Divider
+  Chip
 } from '@mui/material';
 import { 
   School, 
@@ -27,7 +26,20 @@ import { useTheme } from '@mui/material/styles';
 const Home = () => {
   const navigate = useNavigate();
   const theme = useTheme();
-  React.useEffect(() => { AOS.init({ duration: 800, once: true }); }, []);
+  const [isMobile, setIsMobile] = React.useState(false);
+  
+  React.useEffect(() => { 
+    AOS.init({ duration: 800, once: true }); 
+    
+    // Check if mobile
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const features = [
     {
@@ -54,7 +66,7 @@ const Home = () => {
 
   const rules = [
     "Mỗi đội có 5 thành viên",
-    "Thời gian chuẩn bị: 10 phút",
+    "Thời gian chuẩn bị: 5 phút",
     "Thời gian làm bài: 5 phút", 
     "Thời gian tranh luận: 7 phút",
     "Thời gian kết luận: 5 phút"
@@ -68,14 +80,15 @@ const Home = () => {
       overflow: 'hidden'
     }}>
       {/* Logo Section */}
-      <Box sx={{ textAlign: 'center', pt: 6 }}>
+      <Box sx={{ textAlign: 'center', pt: { xs: 3, md: 6 } }}>
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'center', 
           alignItems: 'center', 
-          gap: 4, 
-          mb: 3,
-          flexWrap: 'wrap'
+          gap: { xs: 2, sm: 4 }, 
+          mb: { xs: 2, md: 3 },
+          flexDirection: { xs: 'column', sm: 'row' },
+          px: { xs: 2, sm: 0 }
         }}>
           {/* FPT Logo */}
           <Box sx={{ 
@@ -89,7 +102,7 @@ const Home = () => {
               src="/fpt_logo.png" 
               alt="FPT University Logo" 
               style={{ 
-                height: 120, 
+                height: isMobile ? 80 : 120, 
                 width: 'auto', 
                 objectFit: 'contain'
               }} 
@@ -98,11 +111,11 @@ const Home = () => {
           
           {/* Elegant Divider */}
           <Box sx={{ 
-            width: 3, 
-            height: 80, 
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.6) 100%)',
+            width: { xs: 80, sm: 3 }, 
+            height: { xs: 3, sm: 80 }, 
+            background: 'linear-gradient(90deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.6) 100%)',
             borderRadius: 2,
-            display: { xs: 'none', sm: 'block' }
+            display: { xs: 'block', sm: 'block' }
           }} />
           
           {/* Soft Skills Logo */}
@@ -117,7 +130,7 @@ const Home = () => {
               src="/softskills_logo.png" 
               alt="Soft Skills Department Logo" 
               style={{ 
-                height: 120, 
+                height: isMobile ? 80 : 120, 
                 width: 'auto', 
                 objectFit: 'contain',
                 borderRadius: '50%'
@@ -152,24 +165,33 @@ const Home = () => {
         {/* Hero Section */}
         <Box data-aos="fade-down" sx={{ 
           textAlign: 'center', 
-          py: 8,
+          py: { xs: 4, md: 8 },
+          px: { xs: 2, sm: 0 },
           color: theme.palette.text.primary
         }}>
           <Typography 
-            variant="h2"
+            variant={isMobile ? "h3" : "h2"}
             align="center"
-            sx={{ fontWeight: 700, mb: 2, color: 'white', textShadow: '0 2px 8px rgba(0,0,0,0.10)' }}
+            sx={{ 
+              fontWeight: 700, 
+              mb: { xs: 1.5, md: 2 }, 
+              color: 'white', 
+              textShadow: '0 2px 8px rgba(0,0,0,0.10)',
+              fontSize: { xs: '1.75rem', sm: '2.5rem', md: '3rem' }
+            }}
           >
             AI Debate System: Horizon Expanders
           </Typography>
           <Typography 
-            variant="h5" 
+            variant={isMobile ? "h6" : "h5"} 
             sx={{ 
-              mb: 4, 
+              mb: { xs: 3, md: 4 }, 
               opacity: 0.9,
               fontWeight: 300,
-              maxWidth: 600,
-              mx: 'auto'
+              maxWidth: { xs: '100%', sm: 600 },
+              mx: 'auto',
+              fontSize: { xs: '1rem', sm: '1.25rem', md: '1.5rem' },
+              lineHeight: { xs: 1.4, md: 1.6 }
             }}
             className="slide-up"
           >

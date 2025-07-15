@@ -20,6 +20,12 @@ const AppNavbar = () => {
   return showHeader ? <Navbar /> : null;
 };
 
+// A component to conditionally render Footer based on context
+const AppFooter = () => {
+  const { showFooter } = useLayout();
+  return showFooter ? <Footer /> : null;
+};
+
 const theme = createTheme({
   palette: {
     mode: 'light',
@@ -51,7 +57,7 @@ function App() {
                 </Route>
               </Routes>
             </Box>
-            <Footer />
+            <AppFooter />
           </Box>
         </Router>
       </LayoutProvider>

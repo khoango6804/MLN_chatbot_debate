@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚨 EMERGENCY TEST - MLN Debate</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: linear-gradient(135deg, #ff6b6b 0%, #4ecdc4 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container { 
+            max-width: 700px; 
+            margin: 0 auto; 
+            background: rgba(255,255,255,0.95); 
+            padding: 30px; 
+            border-radius: 20px; 
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            color: #333;
+        }
+        h1 { 
+            color: #e74c3c; 
+            text-align: center; 
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        .form-group { margin: 20px 0; }
+        label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-weight: bold; 
+            color: #2c3e50;
+        }
+        input, select { 
+            width: 100%; 
+            padding: 15px; 
+            border: 3px solid #3498db; 
+            border-radius: 10px; 
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: all 0.3s ease;
+        }
+        input:focus, select:focus { 
+            border-color: #e74c3c; 
+            outline: none; 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231,76,60,0.3);
+        }
+        .btn { 
+            width: 100%; 
+            padding: 18px; 
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); 
+            color: white; 
+            border: none; 
+            border-radius: 10px; 
+            font-size: 20px; 
+            font-weight: bold;
+            cursor: pointer; 
+            margin: 15px 0;
+            transition: all 0.3s ease;
+        }
+        .btn:hover { 
+            transform: translateY(-3px); 
+            box-shadow: 0 10px 25px rgba(231,76,60,0.4);
+            background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+        }
+        .result { 
+            margin: 25px 0; 
+            padding: 20px; 
+            border-radius: 10px; 
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            border-left: 5px solid;
+        }
+        .success { 
+            background: #d5edda; 
+            border-color: #28a745; 
+            color: #155724; 
+        }
+        .error { 
+            background: #f8d7da; 
+            border-color: #dc3545; 
+            color: #721c24; 
+        }
+        .info { 
+            background: #d1ecf1; 
+            border-color: #17a2b8; 
+            color: #0c5460; 
+        }
+        .alert-banner {
+            background: #ff6b6b;
+            color: white;
+            text-align: center;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            font-size: 18px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="alert-banner">
+            🚨 EMERGENCY TEST PAGE - BYPASS REACT CACHE 🚨
+        </div>
+        
+        <h1>🚨 Emergency MLN Debate Test</h1>
+        
+        <form id="testForm">
+            <div class="form-group">
+                <label>🆔 Team ID:</label>
+                <input type="text" id="teamId" value="EMERGENCY_001" required>
+            </div>
+            
+            <div class="form-group">
+                <label>👤 Thành viên 1:</label>
+                <input type="text" id="member1" value="Nguyễn Văn A" required>
+            </div>
+            
+            <div class="form-group">
+                <label>👤 Thành viên 2:</label>
+                <input type="text" id="member2" value="Trần Thị B" required>
+            </div>
+            
+            <div class="form-group">
+                <label>👤 Thành viên 3:</label>
+                <input type="text" id="member3" value="Lê Văn C" required>
+            </div>
+            
+            <div class="form-group">
+                <label>👤 Thành viên 4:</label>
+                <input type="text" id="member4" value="Phạm Thị D" required>
+            </div>
+            
+            <div class="form-group">
+                <label>👤 Thành viên 5:</label>
+                <input type="text" id="member5" value="Hoàng Văn E" required>
+            </div>
+            
+            <div class="form-group">
+                <label>📚 Môn học:</label>
+                <select id="course" required>
+                    <option value="MLN111">MLN111 - Triết học Marx - Lenin</option>
+                    <option value="MLN122">MLN122 - Kinh tế Chính trị Marx - Lenin</option>
+                </select>
+            </div>
+            
+            <button type="submit" class="btn">🚀 BẮT ĐẦU TRANH LUẬN NGAY!</button>
+        </form>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://mlndebate.io.vn/api';
+        
+        document.getElementById('testForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '⏳ Đang test API...';
+            resultDiv.className = 'result info';
+            
+            try {
+                const members = [
+                    document.getElementById('member1').value,
+                    document.getElementById('member2').value,
+                    document.getElementById('member3').value,
+                    document.getElementById('member4').value,
+                    document.getElementById('member5').value
+                ].filter(m => m.trim().length > 0);
+                
+                const requestData = {
+                    members: members,
+                    course_code: document.getElementById('course').value,
+                    team_id: document.getElementById('teamId').value
+                };
+                
+                console.log('🚨 EMERGENCY REQUEST:', requestData);
+                
+                const response = await fetch(`${API_BASE}/debate/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const responseData = await response.json();
+                console.log('🚨 EMERGENCY RESPONSE:', responseData);
+                
+                // EMERGENCY ULTRA SIMPLE VALIDATION - Same as v7.0
+                const isSuccess = response.status === 200 && responseData;
+                
+                let result = `🚨🚨🚨 EMERGENCY TEST RESULTS:\n\n`;
+                result += `📊 HTTP Status: ${response.status}\n`;
+                result += `📋 Response Data:\n${JSON.stringify(responseData, null, 2)}\n\n`;
+                result += `🔍 VALIDATION:\n`;
+                result += `✓ HTTP 200: ${response.status === 200}\n`;
+                result += `✓ Has Data: ${!!responseData}\n`;
+                result += `✓ Success Result: ${isSuccess}\n\n`;
+                
+                if (isSuccess) {
+                    result += `🎉🎉🎉 SUCCESS! API HOẠT ĐỘNG HOÀN HẢO!\n\n`;
+                    result += `✅ Backend trả về đúng format\n`;
+                    result += `✅ Message: "${responseData.message}"\n`;
+                    result += `✅ Team ID: ${responseData.data?.team_id}\n`;
+                    result += `✅ Topic: ${responseData.data?.topic}\n\n`;
+                    result += `🚀 Sẽ điều hướng đến: /debate/${requestData.team_id}`;
+                    
+                    resultDiv.className = 'result success';
+                    
+                    // Auto navigate after 3 seconds
+                    setTimeout(() => {
+                        if (confirm('🎉 Test thành công! Điều hướng đến phòng debate?')) {
+                            window.location.href = `/debate/${requestData.team_id}`;
+                        }
+                    }, 3000);
+                    
+                } else {
+                    result += `❌ VALIDATION FAILED!\n`;
+                    result += `❌ Status: ${response.status}\n`;
+                    result += `❌ Data: ${!!responseData}`;
+                    resultDiv.className = 'result error';
+                }
+                
+                resultDiv.innerHTML = result;
+                
+            } catch (error) {
+                console.error('💥 EMERGENCY ERROR:', error);
+                let result = `💥💥💥 LỖI EMERGENCY:\n\n`;
+                result += `❌ Error: ${error.message}\n`;
+                result += `❌ Có thể là vấn đề mạng hoặc CORS\n`;
+                result += `❌ Kiểm tra console để biết thêm chi tiết`;
+                
+                resultDiv.innerHTML = result;
+                resultDiv.className = 'result error';
+            }
+        });
+        
+        // Auto-fill with timestamp to make unique
+        document.getElementById('teamId').value = `EMERGENCY_${Date.now()}`;
+        
+        console.log('🚨 EMERGENCY TEST PAGE LOADED!');
+        alert('🚨 EMERGENCY TEST PAGE\n\nTrang này bypass hoàn toàn React cache!\nTest API trực tiếp!');
+    </script>
+</body>
+</html> 

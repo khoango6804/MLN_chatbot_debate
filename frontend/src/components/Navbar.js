@@ -8,7 +8,7 @@ import {
   Box,
   Container
 } from '@mui/material';
-import { School, AdminPanelSettings } from '@mui/icons-material';
+import { AdminPanelSettings } from '@mui/icons-material';
 
 const Navbar = () => {
   const location = useLocation();

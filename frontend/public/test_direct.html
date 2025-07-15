@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct API Test - Bypass React</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: linear-gradient(135deg, #7ecbff 0%, #007AFF 100%);
+            min-height: 100vh;
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 30px; 
+            border-radius: 15px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 { color: #007AFF; text-align: center; margin-bottom: 30px; }
+        .form-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, select { 
+            width: 100%; 
+            padding: 12px; 
+            border: 2px solid #ddd; 
+            border-radius: 8px; 
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button { 
+            width: 100%; 
+            padding: 15px; 
+            background: linear-gradient(135deg, #007AFF 0%, #5856D6 100%); 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            font-size: 18px; 
+            font-weight: bold;
+            cursor: pointer; 
+            margin: 10px 0;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,122,255,0.3); }
+        .result { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border-radius: 8px; 
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Direct API Test - Bypass React Cache</h1>
+        
+        <form id="testForm">
+            <div class="form-group">
+                <label>Team ID:</label>
+                <input type="text" id="teamId" value="DIRECT_TEST_123" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Member 1:</label>
+                <input type="text" id="member1" value="Người dùng 1" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Member 2:</label>
+                <input type="text" id="member2" value="Người dùng 2" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Member 3:</label>
+                <input type="text" id="member3" value="Người dùng 3" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Member 4:</label>
+                <input type="text" id="member4" value="Người dùng 4" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Member 5:</label>
+                <input type="text" id="member5" value="Người dùng 5" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Course:</label>
+                <select id="course" required>
+                    <option value="MLN111">MLN111 - Triết học Marx - Lenin</option>
+                    <option value="MLN122">MLN122 - Kinh tế Chính trị Marx - Lenin</option>
+                </select>
+            </div>
+            
+            <button type="submit">🚀 Test API Direct</button>
+        </form>
+        
+        <button onclick="testValidationLogic()">🔍 Test Validation Logic</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://mlndebate.io.vn/api';
+        
+        document.getElementById('testForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '⏳ Testing API...';
+            resultDiv.className = 'result info';
+            
+            try {
+                const members = [
+                    document.getElementById('member1').value,
+                    document.getElementById('member2').value,
+                    document.getElementById('member3').value,
+                    document.getElementById('member4').value,
+                    document.getElementById('member5').value
+                ].filter(m => m.trim().length > 0);
+                
+                const requestData = {
+                    members: members,
+                    course_code: document.getElementById('course').value,
+                    team_id: document.getElementById('teamId').value
+                };
+                
+                console.log('🚀 Making request:', requestData);
+                
+                const response = await fetch(`${API_BASE}/debate/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                console.log('🚀 Raw response:', response);
+                const responseData = await response.json();
+                console.log('🚀 Response data:', responseData);
+                
+                // Apply the EXACT SAME validation logic as v6.0
+                const condition1 = response.status === 200;
+                const condition2 = responseData && responseData.message;
+                const condition3 = typeof responseData.message === 'string';
+                const condition4 = responseData.message.toLowerCase().includes('success') || 
+                                  responseData.message.toLowerCase().includes('already exists');
+                
+                const isSuccess = condition1 && condition2 && condition3 && condition4;
+                
+                let result = `🚀🚀🚀 DIRECT TEST RESULTS:\n\n`;
+                result += `HTTP Status: ${response.status}\n`;
+                result += `Response Data: ${JSON.stringify(responseData, null, 2)}\n\n`;
+                result += `VALIDATION BREAKDOWN:\n`;
+                result += `✓ Condition 1 (HTTP 200): ${condition1}\n`;
+                result += `✓ Condition 2 (Has message): ${condition2}\n`;
+                result += `✓ Condition 3 (Message is string): ${condition3}\n`;
+                result += `✓ Condition 4 (Success keyword): ${condition4}\n\n`;
+                result += `🎯 FINAL RESULT: ${isSuccess ? '✅ SUCCESS' : '❌ FAILED'}\n\n`;
+                
+                if (isSuccess) {
+                    result += `🎉 API is working perfectly!\n`;
+                    result += `🎉 This should navigate to: /debate/${requestData.team_id}`;
+                    resultDiv.className = 'result success';
+                } else {
+                    result += `💥 Validation failed. Check conditions above.`;
+                    resultDiv.className = 'result error';
+                }
+                
+                resultDiv.innerHTML = result;
+                
+                // Test navigation
+                if (isSuccess) {
+                    setTimeout(() => {
+                        if (confirm('🎉 Test passed! Navigate to debate room?')) {
+                            window.location.href = `/debate/${requestData.team_id}`;
+                        }
+                    }, 2000);
+                }
+                
+            } catch (error) {
+                console.error('💥 Error:', error);
+                resultDiv.innerHTML = `💥 ERROR: ${error.message}`;
+                resultDiv.className = 'result error';
+            }
+        });
+        
+        function testValidationLogic() {
+            const resultDiv = document.getElementById('result');
+            
+            const testCases = [
+                { message: 'Debate started successfully', expected: true },
+                { message: 'Team already exists, returning existing session', expected: true },
+                { message: 'Error occurred', expected: false },
+                { message: '', expected: false },
+                { message: null, expected: false }
+            ];
+            
+            let result = `🔍 VALIDATION LOGIC TEST:\n\n`;
+            
+            testCases.forEach((testCase, index) => {
+                const responseData = { message: testCase.message };
+                
+                const condition1 = true; // Assume HTTP 200
+                const condition2 = responseData && responseData.message;
+                const condition3 = typeof responseData.message === 'string';
+                const condition4 = responseData.message && (
+                    responseData.message.toLowerCase().includes('success') || 
+                    responseData.message.toLowerCase().includes('already exists')
+                );
+                
+                const actualResult = condition1 && condition2 && condition3 && condition4;
+                const status = actualResult === testCase.expected ? '✅ PASS' : '❌ FAIL';
+                
+                result += `Test ${index + 1}: "${testCase.message}" → ${status}\n`;
+                result += `  - Has message: ${condition2}\n`;
+                result += `  - Is string: ${condition3}\n`;
+                result += `  - Has keyword: ${condition4}\n`;
+                result += `  - Result: ${actualResult}, Expected: ${testCase.expected}\n\n`;
+            });
+            
+            resultDiv.innerHTML = result;
+            resultDiv.className = 'result info';
+        }
+    </script>
+</body>
+</html> 

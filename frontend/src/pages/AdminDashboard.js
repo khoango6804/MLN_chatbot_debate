@@ -5,7 +5,7 @@ import {
     CircularProgress, Box, Alert, Button, Chip, Tabs, Tab,
     Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
     LinearProgress, Divider, Table, TableBody, TableCell, TableContainer,
-    TableHead, TableRow, Paper, Avatar
+    TableHead, TableRow, Paper, Avatar, useMediaQuery, useTheme
 } from '@mui/material';
 import { 
     Close as CloseIcon, 
@@ -16,22 +16,40 @@ import {
     Group as GroupIcon,
     Speed as LiveIcon,
     Refresh as RefreshIcon,
-    AccessTime as TimeIcon
+    AccessTime as TimeIcon,
+    Visibility as ViewIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { useTheme } from '@mui/material/styles';
 
 const api = axios.create({
-    baseURL: 'http://localhost:5000/api',
+    baseURL: 'https://mlndebate.io.vn/api',
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
 const ScoreCategory = ({ title, scores, criteria }) => {
-    if (!scores || !criteria) return null;
-    const totalScore = Object.values(scores).reduce((sum, score) => sum + score, 0);
-    const maxScore = criteria.reduce((sum, item) => sum + item.max_score, 0);
+    // Sử dụng default empty objects để tránh null/undefined
+    const safeScores = scores || {};
+    const safeCriteria = criteria || [];
+    
+    // Nếu không có data thì hiển thị thông báo warning
+    if (!scores || !criteria || !Object.keys(safeScores).length || !safeCriteria.length) {
+        return (
+            <Box sx={{ mb: 3, p: 2, border: '1px dashed #orange', borderRadius: 2, bgcolor: '#fff3e0' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: 'orange' }}>{title}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    ⚠️ Không có dữ liệu điểm số cho giai đoạn này
+                </Typography>
+                <Typography variant="caption" color="error" sx={{ fontSize: '0.7rem' }}>
+                    Debug Info: scores_length={Object.keys(safeScores).length}, criteria_length={safeCriteria.length}
+                </Typography>
+            </Box>
+        );
+    }
+
+    const totalScore = Object.values(safeScores).reduce((sum, score) => sum + score, 0);
+    const maxScore = safeCriteria.reduce((sum, item) => sum + item.max_score, 0);
 
     return (
         <Box sx={{ mb: 3 }}>
@@ -39,8 +57,8 @@ const ScoreCategory = ({ title, scores, criteria }) => {
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>{title}</Typography>
                 <Chip label={`Tổng: ${totalScore} / ${maxScore}`} color="primary" />
             </Box>
-            {criteria.map((item) => {
-                const score = scores[item.id] ?? 0;
+            {safeCriteria.map((item) => {
+                const score = safeScores[item.id] ?? 0;
                 const percentage = item.max_score > 0 ? (score / item.max_score) * 100 : 0;
                 return (
                     <Box key={item.id} sx={{ mb: 1.5 }}>
@@ -65,6 +83,15 @@ const LeaderboardTable = ({ data, stats, loading }) => {
         return <Alert severity="info" sx={{ mt: 2 }}>Không có dữ liệu để hiển thị leaderboard.</Alert>;
     }
 
+    // Safe stats with defaults
+    const safeStats = {
+        total_teams: 0,
+        average_score: 0,
+        highest_score: 0,
+        rank_distribution: {},
+        ...stats
+    };
+
     const getRankIcon = (position) => {
         if (position === 1) return '🏆';
         if (position === 2) return '🥈';
@@ -87,21 +114,21 @@ const LeaderboardTable = ({ data, stats, loading }) => {
                     <Grid item xs={12} md={3}>
                         <Card sx={{ textAlign: 'center', p: 2 }}>
                             <GroupIcon color="primary" sx={{ fontSize: 40, mb: 1 }} />
-                            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{stats.total_teams}</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{safeStats.total_teams}</Typography>
                             <Typography color="text.secondary">Tổng số nhóm</Typography>
                         </Card>
                     </Grid>
                     <Grid item xs={12} md={3}>
                         <Card sx={{ textAlign: 'center', p: 2 }}>
                             <TrendingUpIcon color="secondary" sx={{ fontSize: 40, mb: 1 }} />
-                            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{stats.average_score}</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{Math.round(safeStats.average_score * 10) / 10}</Typography>
                             <Typography color="text.secondary">Điểm trung bình</Typography>
                         </Card>
                     </Grid>
                     <Grid item xs={12} md={3}>
                         <Card sx={{ textAlign: 'center', p: 2 }}>
                             <TrophyIcon color="warning" sx={{ fontSize: 40, mb: 1 }} />
-                            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{stats.highest_score}</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>{safeStats.highest_score}</Typography>
                             <Typography color="text.secondary">Điểm cao nhất</Typography>
                         </Card>
                     </Grid>
@@ -109,7 +136,7 @@ const LeaderboardTable = ({ data, stats, loading }) => {
                         <Card sx={{ textAlign: 'center', p: 2 }}>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                 <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>Phân bố hạng</Typography>
-                                {Object.entries(stats.rank_distribution).map(([rank, count]) => (
+                                {Object.entries(safeStats.rank_distribution || {}).map(([rank, count]) => (
                                     <Typography key={rank} variant="body2">
                                         {rank}: {count}
                                     </Typography>
@@ -121,104 +148,209 @@ const LeaderboardTable = ({ data, stats, loading }) => {
             )}
 
             {/* Leaderboard Table */}
-            <TableContainer component={Paper} sx={{ borderRadius: 3, overflow: 'hidden' }}>
-                <Table>
+            <TableContainer component={Paper} sx={{ 
+                borderRadius: 3, 
+                overflow: 'auto',
+                maxWidth: '100%'
+            }}>
+                <Table sx={{ minWidth: 1000 }}>
                     <TableHead sx={{ backgroundColor: '#1976d2' }}>
                         <TableRow>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Hạng</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Nhóm</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Chủ đề</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Thành viên</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Điểm số</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Phần trăm</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Cấp độ</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Ngày hoàn thành</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 100,
+                                whiteSpace: 'nowrap'
+                            }}>Hạng</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 140,
+                                whiteSpace: 'nowrap'
+                            }}>Nhóm</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 200,
+                                whiteSpace: 'nowrap'
+                            }}>Chủ đề</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 160,
+                                whiteSpace: 'nowrap'
+                            }}>Thành viên</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 180,
+                                whiteSpace: 'nowrap'
+                            }}>Điểm số</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 120,
+                                whiteSpace: 'nowrap'
+                            }}>Phần trăm</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 100,
+                                whiteSpace: 'nowrap'
+                            }}>Cấp độ</TableCell>
+                            <TableCell sx={{ 
+                                color: 'white', 
+                                fontWeight: 'bold',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
+                                minWidth: 140,
+                                whiteSpace: 'nowrap'
+                            }}>Ngày hoàn thành</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {data.map((entry, index) => (
+                        {(data || []).map((entry, index) => (
                             <TableRow 
-                                key={entry.team_id}
+                                key={(entry && entry.team_id) || `leaderboard-row-${index}`}
                                 sx={{ 
                                     '&:nth-of-type(odd)': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
                                     '&:hover': { backgroundColor: 'rgba(25, 118, 210, 0.08)' }
                                 }}
                             >
-                                <TableCell>
+                                <TableCell sx={{ minWidth: 100 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         <Avatar sx={{ 
-                                            bgcolor: entry.position <= 3 ? getRankColor(entry.rank_level) : 'grey.300',
-                                            width: 40, 
-                                            height: 40,
-                                            fontSize: '1.2rem'
+                                            bgcolor: ((entry && entry.position) || 999) <= 3 ? getRankColor((entry && entry.rank_level) || 'Bronze') : 'grey.300',
+                                            width: { xs: 32, sm: 36, md: 40 }, 
+                                            height: { xs: 32, sm: 36, md: 40 },
+                                            fontSize: { xs: '0.875rem', sm: '1rem', md: '1.2rem' }
                                         }}>
-                                            {getRankIcon(entry.position)}
+                                            {getRankIcon((entry && entry.position) || 0)}
                                         </Avatar>
-                                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                            #{entry.position}
+                                        <Typography variant="h6" sx={{ 
+                                            fontWeight: 'bold',
+                                            fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' }
+                                        }}>
+                                            #{(entry && entry.position) || 'N/A'}
                                         </Typography>
                                     </Box>
                                 </TableCell>
-                                <TableCell>
-                                    <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-                                        {entry.team_id}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                        {entry.course_code}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2" sx={{ 
-                                        maxWidth: 200, 
-                                        overflow: 'hidden', 
-                                        textOverflow: 'ellipsis',
+                                <TableCell sx={{ minWidth: 140 }}>
+                                    <Typography variant="body1" sx={{ 
+                                        fontWeight: 'bold',
+                                        fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                         whiteSpace: 'nowrap'
                                     }}>
-                                        {entry.topic}
+                                        {(entry && entry.team_id) || 'Unknown'}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{
+                                        fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                                    }}>
+                                        {(entry && entry.course_code) || 'N/A'}
                                     </Typography>
                                 </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {entry.members.slice(0, 2).join(', ')}
-                                        {entry.members.length > 2 && ` (+${entry.members.length - 2})`}
+                                <TableCell sx={{ minWidth: 200 }}>
+                                    <Typography variant="body2" sx={{ 
+                                        maxWidth: 180, 
+                                        overflow: 'hidden', 
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
+                                        fontSize: { xs: '0.7rem', sm: '0.875rem' }
+                                    }}>
+                                        {(entry && entry.topic) || 'No topic'}
                                     </Typography>
                                 </TableCell>
-                                <TableCell>
-                                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                        {entry.total_score}/{entry.max_score}
+                                <TableCell sx={{ minWidth: 160 }}>
+                                    <Typography variant="body2" sx={{
+                                        fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        maxWidth: 140
+                                    }}>
+                                        {((entry && entry.members) || []).slice(0, 2).join(', ')}
+                                        {((entry && entry.members) || []).length > 2 && ` (+${((entry && entry.members) || []).length - 2})`}
                                     </Typography>
-                                    <Box sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
-                                        <Chip size="small" label={`P1: ${entry.phase_scores.phase1}`} />
-                                        <Chip size="small" label={`P2A: ${entry.phase_scores.phase2A}`} />
-                                        <Chip size="small" label={`P2B: ${entry.phase_scores.phase2B}`} />
-                                        <Chip size="small" label={`P3: ${entry.phase_scores.phase3}`} />
+                                </TableCell>
+                                <TableCell sx={{ minWidth: 180 }}>
+                                    <Typography variant="h6" sx={{ 
+                                        fontWeight: 'bold',
+                                        fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' },
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        {(entry && entry.total_score) || 0}/{(entry && entry.max_score) || 100}
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                                        {(entry && entry.phase_scores) && Object.entries(entry.phase_scores).map(([phase, score]) => (
+                                            <Chip 
+                                                key={phase}
+                                                size="small" 
+                                                label={`${phase}: ${score}`} 
+                                                variant="outlined"
+                                                sx={{ fontSize: { xs: '0.6rem', sm: '0.75rem' } }}
+                                            />
+                                        ))}
+                                        {!(entry && entry.phase_scores) && (
+                                            <Chip 
+                                                size="small" 
+                                                label="No phase data" 
+                                                variant="outlined"
+                                                sx={{ fontSize: { xs: '0.6rem', sm: '0.75rem' } }}
+                                            />
+                                        )}
                                     </Box>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell sx={{ minWidth: 120 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                            {entry.percentage}%
+                                        <Typography variant="h6" sx={{ 
+                                            fontWeight: 'bold',
+                                            fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' },
+                                            whiteSpace: 'nowrap'
+                                        }}>
+                                            {Math.round((entry && entry.percentage) || 0)}%
                                         </Typography>
                                         <LinearProgress 
                                             variant="determinate" 
-                                            value={entry.percentage} 
-                                            sx={{ width: 60, height: 8, borderRadius: 4 }}
+                                            value={(entry && entry.percentage) || 0} 
+                                            sx={{ 
+                                                width: { xs: 40, sm: 50, md: 60 }, 
+                                                height: { xs: 6, sm: 8 }, 
+                                                borderRadius: 4 
+                                            }}
                                         />
                                     </Box>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell sx={{ minWidth: 100 }}>
                                     <Chip 
-                                        label={entry.rank_level}
+                                        label={(entry && entry.rank_level) || 'Bronze'}
                                         sx={{ 
-                                            bgcolor: getRankColor(entry.rank_level),
+                                            bgcolor: getRankColor((entry && entry.rank_level) || 'Bronze'),
                                             color: 'white',
-                                            fontWeight: 'bold'
+                                            fontWeight: 'bold',
+                                            fontSize: { xs: '0.6rem', sm: '0.75rem' }
                                         }}
                                     />
                                 </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2">
-                                        {format(new Date(entry.completed_at), 'dd/MM/yyyy HH:mm')}
+                                <TableCell sx={{ minWidth: 140 }}>
+                                    <Typography variant="body2" sx={{
+                                        fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        {(entry && entry.completed_at) ? 
+                                            (() => {
+                                                try {
+                                                    return format(new Date(entry.completed_at), 'dd/MM/yyyy HH:mm');
+                                                } catch (e) {
+                                                    return 'Invalid Date';
+                                                }
+                                            })() : 'N/A'
+                                        }
                                     </Typography>
                                 </TableCell>
                             </TableRow>
@@ -239,21 +371,15 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
         return <Alert severity="info" sx={{ mt: 2 }}>Hiện tại không có team nào đang thi.</Alert>;
     }
 
-    const getPhaseColor = (status) => {
-        switch (status) {
-            case 'completed': return 'success';
-            case 'current': return 'warning';
-            default: return 'default';
-        }
+    // Safe stats with defaults
+    const safeStats = {
+        active_debates: 0,
+        total_participants: 0,
+        average_progress: 0,
+        ...stats
     };
 
-    const getPhaseIcon = (status) => {
-        switch (status) {
-            case 'completed': return '✅';
-            case 'current': return '⚡';
-            default: return '⏳';
-        }
-    };
+    // Removed unused functions getPhaseColor and getPhaseIcon
 
     return (
         <Box>
@@ -296,7 +422,7 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                                 WebkitTextFillColor: 'transparent',
                                 mb: 1
                             }}>
-                                {stats.active_teams}
+                                {safeStats.active_debates || 0}
                             </Typography>
                             <Typography sx={{ 
                                 color: 'rgba(0,0,0,0.6)', 
@@ -343,14 +469,14 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                                 WebkitTextFillColor: 'transparent',
                                 mb: 1
                             }}>
-                                {stats.average_score}
+                                {(safeStats.average_progress || 0).toFixed(1)}%
                             </Typography>
                             <Typography sx={{ 
                                 color: 'rgba(0,0,0,0.6)', 
                                 fontWeight: 500,
                                 fontSize: '1rem'
                             }}>
-                                Điểm TB hiện tại
+                                Tiến độ TB
                             </Typography>
                         </Card>
                     </Grid>
@@ -390,14 +516,14 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                                 WebkitTextFillColor: 'transparent',
                                 mb: 1
                             }}>
-                                {stats.highest_score}
+                                {safeStats.total_participants || 0}
                             </Typography>
                             <Typography sx={{ 
                                 color: 'rgba(0,0,0,0.6)', 
                                 fontWeight: 500,
                                 fontSize: '1rem'
                             }}>
-                                Điểm cao nhất
+                                Tổng thành viên
                             </Typography>
                         </Card>
                     </Grid>
@@ -427,7 +553,7 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                                 Phân bố Phase
                             </Typography>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                {Object.entries(stats.phases_distribution).map(([phase, count]) => (
+                                {Object.entries(safeStats.phases_distribution || {}).map(([phase, count]) => (
                                     <Box key={phase} sx={{ 
                                         display: 'flex', 
                                         justifyContent: 'space-between',
@@ -490,14 +616,15 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                 component={Paper} 
                 sx={{ 
                     borderRadius: 4,
-                    overflow: 'hidden',
+                    overflow: 'auto',
                     background: 'linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.7) 100%)',
                     backdropFilter: 'blur(20px)',
                     border: '1px solid rgba(255,255,255,0.3)',
-                    boxShadow: '0 12px 40px rgba(0,0,0,0.12)'
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.12)',
+                    maxWidth: '100%'
                 }}
             >
-                <Table>
+                <Table sx={{ minWidth: 1200 }}>
                     <TableHead sx={{ 
                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                         position: 'sticky',
@@ -508,104 +635,120 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 80,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Hạng
                             </TableCell>
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 160,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Team
                             </TableCell>
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 180,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Chủ đề
                             </TableCell>
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 140,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Phase hiện tại
                             </TableCell>
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 120,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Điểm hiện tại
                             </TableCell>
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 140,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Tiến độ Phase
                             </TableCell>
                             <TableCell sx={{ 
                                 color: 'white', 
                                 fontWeight: 700, 
-                                fontSize: '1rem',
+                                fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' },
                                 py: 2,
-                                borderBottom: 'none'
+                                borderBottom: 'none',
+                                minWidth: 160,
+                                whiteSpace: 'nowrap'
                             }}>
                                 Thời gian bắt đầu
                             </TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {data.map((entry, index) => (
+                        {(data || []).map((entry, index) => (
                             <TableRow 
-                                key={entry.team_id}
+                                key={(entry && entry.team_id) || `row-${index}`}
                                 sx={{ 
                                     '&:nth-of-type(odd)': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
                                     '&:hover': { backgroundColor: 'rgba(25, 118, 210, 0.08)' }
                                 }}
                             >
-                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)', minWidth: 80 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                         <Avatar sx={{ 
-                                            background: entry.position <= 3 ? 
+                                            background: ((entry && entry.position) || 999) <= 3 ? 
                                                 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' :
                                                 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                                            width: 48, 
-                                            height: 48,
-                                            fontSize: '1.2rem',
+                                            width: { xs: 32, sm: 40, md: 48 }, 
+                                            height: { xs: 32, sm: 40, md: 48 },
+                                            fontSize: { xs: '0.875rem', sm: '1rem', md: '1.2rem' },
                                             fontWeight: 700,
                                             color: 'white',
                                             boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
                                         }}>
-                                            #{entry.position}
+                                            #{(entry && entry.position) || (index + 1)}
                                         </Avatar>
                                     </Box>
                                 </TableCell>
-                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)', minWidth: 160 }}>
                                     <Typography variant="h6" sx={{ 
                                         fontWeight: 700,
                                         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                                         backgroundClip: 'text',
                                         WebkitBackgroundClip: 'text',
                                         WebkitTextFillColor: 'transparent',
-                                        mb: 0.5
+                                        mb: 0.5,
+                                        fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' },
+                                        whiteSpace: 'nowrap'
                                     }}>
-                                        {entry.team_id}
+                                        {(entry && entry.team_id) || 'Unknown'}
                                     </Typography>
                                     <Box sx={{ 
                                         px: 1.5,
@@ -617,59 +760,77 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                                     }}>
                                         <Typography variant="caption" sx={{ 
                                             color: '#667eea',
-                                            fontWeight: 600
+                                            fontWeight: 600,
+                                            fontSize: { xs: '0.6rem', sm: '0.75rem' }
                                         }}>
-                                            {entry.course_code}
+                                            {(entry && entry.course_code) || 'N/A'}
                                         </Typography>
                                     </Box>
                                     <br />
                                     <Typography variant="body2" sx={{ 
                                         color: 'rgba(0,0,0,0.6)',
-                                        fontWeight: 500
+                                        fontWeight: 500,
+                                        fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        maxWidth: 140
                                     }}>
-                                        {entry.members.slice(0, 2).join(', ')}
-                                        {entry.members.length > 2 && ` (+${entry.members.length - 2})`}
+                                        {((entry && entry.members) || []).slice(0, 2).join(', ')}
+                                        {((entry && entry.members) || []).length > 2 && ` (+${((entry && entry.members) || []).length - 2})`}
                                     </Typography>
                                 </TableCell>
-                                <TableCell>
+                                <TableCell sx={{ minWidth: 180 }}>
                                     <Typography variant="body2" sx={{ 
-                                        maxWidth: 200, 
+                                        maxWidth: 160, 
                                         overflow: 'hidden', 
                                         textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
+                                        whiteSpace: 'nowrap',
+                                        fontSize: { xs: '0.7rem', sm: '0.875rem' }
                                     }}>
-                                        {entry.topic}
+                                        {(entry && entry.topic) || 'No topic'}
                                     </Typography>
                                 </TableCell>
-                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)', minWidth: 140 }}>
                                     <Chip 
-                                        label={entry.current_phase}
+                                        label={(entry && entry.current_phase) || 'Unknown Phase'}
                                         icon={<LiveIcon />}
                                         sx={{
-                                            background: entry.current_phase.includes('Phase 4') ? 
+                                            background: ((entry && entry.current_phase) || '').includes('Phase 4') ? 
                                                 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' :
                                                 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
                                             color: 'white',
                                             fontWeight: 600,
                                             borderRadius: 3,
-                                            px: 2,
+                                            px: { xs: 1, sm: 2 },
+                                            fontSize: { xs: '0.6rem', sm: '0.75rem', md: '0.875rem' },
                                             boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
                                             '& .MuiChip-icon': {
-                                                color: 'white'
+                                                color: 'white',
+                                                fontSize: { xs: '14px', sm: '16px', md: '18px' }
+                                            },
+                                            '& .MuiChip-label': {
+                                                whiteSpace: 'nowrap'
                                             }
                                         }}
                                     />
                                 </TableCell>
-                                <TableCell>
-                                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                        {entry.total_current_score}/{entry.max_score}
+                                <TableCell sx={{ minWidth: 120 }}>
+                                    <Typography variant="h6" sx={{ 
+                                        fontWeight: 'bold',
+                                        fontSize: { xs: '0.875rem', sm: '1rem', md: '1.25rem' },
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        {(entry && entry.total_current_score) || 0}/{(entry && entry.max_score) || 100}
                                     </Typography>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {entry.percentage}%
+                                    <Typography variant="body2" color="text.secondary" sx={{
+                                        fontSize: { xs: '0.7rem', sm: '0.875rem' }
+                                    }}>
+                                        {(entry && entry.percentage) || 0}%
                                     </Typography>
                                     <LinearProgress 
                                         variant="determinate" 
-                                        value={entry.percentage} 
+                                        value={(entry && entry.percentage) || 0} 
                                         sx={{ 
                                             mt: 0.5, 
                                             height: 6, 
@@ -677,103 +838,84 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
                                             backgroundColor: 'rgba(0,0,0,0.1)'
                                         }} 
                                     />
-                                                                         <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
-                                         <Chip 
-                                             size="small" 
-                                             label={`P1: ${entry.phase_scores.phase1}`} 
-                                             sx={{
-                                                 background: entry.phases_status.phase1 === 'completed' ? 
-                                                     'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' : 
-                                                     'rgba(0,0,0,0.1)',
-                                                 color: entry.phases_status.phase1 === 'completed' ? 'white' : 'rgba(0,0,0,0.6)',
-                                                 fontWeight: 600,
-                                                 borderRadius: 2
-                                             }}
-                                         />
-                                         <Chip 
-                                             size="small" 
-                                             label={`P2A: ${entry.phase_scores.phase2A}`} 
-                                             sx={{
-                                                 background: entry.phases_status.phase2A === 'completed' ? 
-                                                     'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' : 
-                                                     'rgba(0,0,0,0.1)',
-                                                 color: entry.phases_status.phase2A === 'completed' ? 'white' : 'rgba(0,0,0,0.6)',
-                                                 fontWeight: 600,
-                                                 borderRadius: 2
-                                             }}
-                                         />
-                                         <Chip 
-                                             size="small" 
-                                             label={`P2B: ${entry.phase_scores.phase2B}`} 
-                                             sx={{
-                                                 background: entry.phases_status.phase2B === 'completed' ? 
-                                                     'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' : 
-                                                     'rgba(0,0,0,0.1)',
-                                                 color: entry.phases_status.phase2B === 'completed' ? 'white' : 'rgba(0,0,0,0.6)',
-                                                 fontWeight: 600,
-                                                 borderRadius: 2
-                                             }}
-                                         />
-                                         <Chip 
-                                             size="small" 
-                                             label={`P3: ${entry.phase_scores.phase3}`} 
-                                             sx={{
-                                                 background: entry.phases_status.phase3 === 'completed' ? 
-                                                     'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' : 
-                                                     'rgba(0,0,0,0.1)',
-                                                 color: entry.phases_status.phase3 === 'completed' ? 'white' : 'rgba(0,0,0,0.6)',
-                                                 fontWeight: 600,
-                                                 borderRadius: 2
-                                             }}
-                                         />
-                                     </Box>
+                                    <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+                                        <Chip 
+                                            size="small" 
+                                            label={`Score: ${(entry && entry.score) || 0}`} 
+                                            sx={{
+                                                background: ((entry && entry.status) || 'unknown') === 'completed' ? 
+                                                    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' : 
+                                                    'rgba(0,0,0,0.1)',
+                                                color: ((entry && entry.status) || 'unknown') === 'completed' ? 'white' : 'rgba(0,0,0,0.6)',
+                                                fontWeight: 600,
+                                                borderRadius: 2,
+                                                fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                                            }}
+                                        />
+                                        <Chip 
+                                            size="small" 
+                                            label={`Phase: ${(entry && entry.current_phase) || 'N/A'}`} 
+                                            sx={{
+                                                background: ((entry && entry.status) || 'unknown') === 'active' ? 
+                                                    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' : 
+                                                    'rgba(0,0,0,0.1)',
+                                                color: ((entry && entry.status) || 'unknown') === 'active' ? 'white' : 'rgba(0,0,0,0.6)',
+                                                fontWeight: 600,
+                                                borderRadius: 2,
+                                                fontSize: { xs: '0.6rem', sm: '0.75rem' }
+                                            }}
+                                        />
+                                    </Box>
                                 </TableCell>
-                                <TableCell>
-                                                                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                                         {Object.entries(entry.phases_status).map(([phase, status]) => {
-                                             const phaseLabel = {
-                                                 'phase1': 'P1',
-                                                 'phase2A': 'P2A', 
-                                                 'phase2B': 'P2B',
-                                                 'phase3': 'P3'
-                                             }[phase] || phase;
-                                             return (
-                                                 <Chip
-                                                     key={phase}
-                                                     size="small"
-                                                     label={`${phaseLabel}: ${getPhaseIcon(status)}`}
-                                                     color={getPhaseColor(status)}
-                                                     variant={status === 'completed' ? 'filled' : 'outlined'}
-                                                 />
-                                             );
-                                         })}
-                                     </Box>
+                                <TableCell sx={{ minWidth: 140 }}>
+                                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                        <Chip
+                                            size="small"
+                                            label={`Status: ${(entry && entry.status) || 'unknown'}`}
+                                            color={((entry && entry.status) || 'unknown') === 'completed' ? 'success' : ((entry && entry.status) || 'unknown') === 'active' ? 'warning' : 'default'}
+                                            variant="filled"
+                                            sx={{ fontSize: { xs: '0.6rem', sm: '0.75rem' } }}
+                                        />
+                                        {(entry && entry.current_phase) && (
+                                            <Chip
+                                                size="small"
+                                                label={entry.current_phase}
+                                                color="info"
+                                                variant="outlined"
+                                                sx={{ fontSize: { xs: '0.6rem', sm: '0.75rem' } }}
+                                            />
+                                        )}
+                                    </Box>
                                 </TableCell>
-                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)' }}>
+                                <TableCell sx={{ py: 3, borderBottom: '1px solid rgba(255,255,255,0.2)', minWidth: 160 }}>
                                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                                         <Box sx={{
                                             background: 'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
                                             borderRadius: '50%',
-                                            width: 24,
-                                            height: 24,
+                                            width: { xs: 20, sm: 24 },
+                                            height: { xs: 20, sm: 24 },
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center'
                                         }}>
-                                            <TimeIcon sx={{ fontSize: 16, color: 'rgba(0,0,0,0.7)' }} />
+                                            <TimeIcon sx={{ fontSize: { xs: 14, sm: 16 }, color: 'rgba(0,0,0,0.7)' }} />
                                         </Box>
                                         <Typography variant="body2" sx={{ 
                                             fontWeight: 600,
-                                            color: 'rgba(0,0,0,0.8)'
+                                            color: 'rgba(0,0,0,0.8)',
+                                            fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                                            whiteSpace: 'nowrap'
                                         }}>
-                                            {format(new Date(entry.started_at), 'HH:mm:ss')}
+                                            {(entry && entry.started_at) ? format(new Date(entry.started_at), 'HH:mm:ss') : 'N/A'}
                                         </Typography>
                                     </Box>
                                     <Typography variant="caption" sx={{ 
                                         color: 'rgba(0,0,0,0.5)',
-                                        fontWeight: 500
+                                        fontWeight: 500,
+                                        fontSize: { xs: '0.6rem', sm: '0.75rem' },
+                                        whiteSpace: 'nowrap'
                                     }}>
-                                        {format(new Date(entry.started_at), 'dd/MM/yyyy')}
+                                        {(entry && entry.started_at) ? format(new Date(entry.started_at), 'dd/MM/yyyy') : 'N/A'}
                                     </Typography>
                                 </TableCell>
                             </TableRow>
@@ -784,7 +926,6 @@ const LiveScoringTable = ({ data, stats, loading, onRefresh }) => {
         </Box>
     );
 };
-
 
 const AdminDashboard = () => {
     const [activeSessions, setActiveSessions] = useState([]);
@@ -803,6 +944,7 @@ const AdminDashboard = () => {
     const [liveScoringStats, setLiveScoringStats] = useState(null);
     const [liveScoringLoading, setLiveScoringLoading] = useState(false);
     const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
     const fetchSessions = useCallback(async () => {
         try {
@@ -900,17 +1042,17 @@ const AdminDashboard = () => {
     const handleDownload = async (teamId) => {
         try {
             const response = await api.get(`/debate/${teamId}/export_docx`, {
-                responseType: 'blob', // Important
+                responseType: 'blob'
             });
             const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `debate_result_${teamId}.docx`);
+            link.setAttribute('download', `debate_report_${teamId}.docx`);
             document.body.appendChild(link);
             link.click();
-            link.remove();
-        } catch (err) {
-            setError(`Failed to download report for team ${teamId}.`);
+            link.parentNode.removeChild(link);
+        } catch (error) {
+            console.error('Error downloading report:', error);
         }
     };
 
@@ -946,7 +1088,15 @@ const AdminDashboard = () => {
                         </Typography>
                     ) : (
                          <Typography variant="body2" color="text.secondary">
-                            <b>Completed:</b> {format(new Date(session.completed_at), 'Pp')}
+                            <b>Completed:</b> {session.completed_at ? 
+                                (() => {
+                                    try {
+                                        return format(new Date(session.completed_at), 'Pp');
+                                    } catch (e) {
+                                        return 'Invalid Date';
+                                    }
+                                })() : 'N/A'
+                            }
                         </Typography>
                     )}
                 </CardContent>
@@ -1050,10 +1200,10 @@ const AdminDashboard = () => {
                                 {selectedSession.evaluation?.feedback || "No feedback provided."}
                             </Typography>
                             <Divider sx={{ my: 3 }} />
-                            <ScoreCategory title="Phase 1: Luận điểm ban đầu" scores={selectedSession.evaluation?.scores?.phase1} criteria={criteria.phase1} />
-                            <ScoreCategory title="Phase 2A: AI hỏi, SV trả lời" scores={selectedSession.evaluation?.scores?.phase2A} criteria={criteria.phase2A} />
-                            <ScoreCategory title="Phase 2B: SV hỏi, AI trả lời" scores={selectedSession.evaluation?.scores?.phase2B} criteria={criteria.phase2B} />
-                            <ScoreCategory title="Phase 3: Kết luận & Tổng hợp" scores={selectedSession.evaluation?.scores?.phase3} criteria={criteria.phase3} />
+                            <ScoreCategory title="Phase 1: Luận điểm ban đầu" scores={selectedSession.evaluation?.scores?.phase1} criteria={criteria?.phase1} />
+                            <ScoreCategory title="Phase 2: AI chất vấn SV" scores={selectedSession.evaluation?.scores?.phase2} criteria={criteria?.phase2} />
+                            <ScoreCategory title="Phase 3: SV chất vấn AI" scores={selectedSession.evaluation?.scores?.phase3} criteria={criteria?.phase3} />
+                            <ScoreCategory title="Phase 4: Tổng kết & Kết luận" scores={selectedSession.evaluation?.scores?.phase4} criteria={criteria?.phase4} />
                         </DialogContent>
                         <DialogActions>
                             <Button onClick={() => handleDownload(selectedSession.team_id)} startIcon={<DownloadIcon />}>
