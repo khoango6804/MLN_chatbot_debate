@@ -1,9 +1,6 @@
 # Requirements for Vercel serverless functions
-# This file should include all dependencies needed by the API
-# Backend dependencies will be installed from backend/requirements.txt
+# Install backend deps via include, plus Mangum adapter
 
+-r ../backend/requirements.txt
 mangum>=0.17.0
-
-# Note: Backend dependencies are loaded from backend/requirements.txt
-# Make sure backend/requirements.txt includes all needed packages
 
