@@ -27,6 +27,7 @@ import {
 import axios from 'axios';
 import { useTheme } from '@mui/material/styles';
 import MuiAlert from '@mui/material/Alert';
+import API_CONFIG from '../config/api';
 
 const StartDebate = () => {
   const navigate = useNavigate();
@@ -98,7 +99,7 @@ const StartDebate = () => {
       
       console.log('📤 Sending request:', requestData);
       
-      const response = await axios.post("https://mlndebate.io.vn/api/debate/start", requestData);
+      const response = await axios.post(`${API_CONFIG.baseURL}/debate/start`, requestData);
       
       console.log('📥 Response received:', response);
       console.log('📊 Response data:', response.data);
@@ -455,7 +456,7 @@ const StartDebate = () => {
                         };
                         console.log('🧪 Test request:', testData);
                         
-                        const response = await axios.post("https://mlndebate.io.vn/api/debate/start", testData);
+                        const response = await axios.post(`${API_CONFIG.baseURL}/debate/start`, testData);
                         console.log('🧪 Test response:', response);
                         console.log('🧪 Test success:', response.data);
                         

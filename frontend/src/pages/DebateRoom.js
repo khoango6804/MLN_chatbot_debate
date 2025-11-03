@@ -29,12 +29,16 @@ import { useTheme } from '@mui/material/styles';
 
 console.log('DEBATE ROOM JS LOADED');
 
+// Import API config
+import API_CONFIG from '../config/api';
+
 // Create axios instance with default config
 const api = axios.create({
-  baseURL: 'https://mlndebate.io.vn/api',
+  baseURL: API_CONFIG.baseURL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: API_CONFIG.timeout,
 });
 
 // Hàm mới để định dạng văn bản từ AI, xóa bỏ các dấu *

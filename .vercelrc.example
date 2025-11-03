@@ -1,0 +1,13 @@
+# Vercel Environment Variables
+# Add these in Vercel Dashboard -> Settings -> Environment Variables
+
+# Google Generative AI API Key
+GOOGLE_API_KEY=your_google_api_key_here
+
+# OpenAI API Key (if used)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Other environment variables
+REACT_APP_API_URL=/api
+REACT_APP_WS_URL=ws://your-domain/ws
+

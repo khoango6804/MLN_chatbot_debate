@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import API_CONFIG from '../config/api';
 
 const EmergencyTest = () => {
   const navigate = useNavigate();
@@ -39,7 +40,7 @@ const EmergencyTest = () => {
 
       console.log('🚨 EMERGENCY REQUEST:', requestData);
 
-      const response = await fetch('https://mlndebate.io.vn/api/debate/start', {
+      const response = await fetch(`${API_CONFIG.baseURL}/debate/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

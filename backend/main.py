@@ -18,17 +18,38 @@ def decode_team_id(team_id: str) -> str:
     return unquote(team_id)
 
 # CORS configuration - Fixed to prevent duplicate headers
+# Updated for Vercel deployment - allows Vercel domains and localhost
+import os
+vercel_url = os.getenv("VERCEL_URL", "")
+vercel_env = os.getenv("VERCEL_ENV", "")
+
+# Build allowed origins list
+allowed_origins = [
+    "http://localhost:3000",
+    "http://localhost:3001", 
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://mlndebate.io.vn",
+    "https://mlndebate.io.vn",
+    "http://www.mlndebate.io.vn",
+    "https://www.mlndebate.io.vn",
+]
+
+# Add Vercel preview/deployment URLs dynamically
+if vercel_url:
+    allowed_origins.extend([
+        f"https://{vercel_url}",
+        f"http://{vercel_url}"
+    ])
+
+# For Vercel preview/development, we need to handle CORS differently
+# Cannot use "*" with allow_credentials=True
+allow_all_origins = vercel_env in ["development", "preview"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://mlndebate.io.vn", 
-        "https://mlndebate.io.vn",
-        "http://www.mlndebate.io.vn", 
-        "https://www.mlndebate.io.vn",
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000"
-    ],
-    allow_credentials=True,
+    allow_origins=allowed_origins if not allow_all_origins else ["*"],
+    allow_credentials=not allow_all_origins,  # Cannot use credentials with wildcard
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
     expose_headers=["*"],

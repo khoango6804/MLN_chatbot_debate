@@ -20,12 +20,14 @@ import {
     Visibility as ViewIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
+import API_CONFIG from '../config/api';
 
 const api = axios.create({
-    baseURL: 'https://mlndebate.io.vn/api',
+    baseURL: API_CONFIG.baseURL,
     headers: {
         'Content-Type': 'application/json'
-    }
+    },
+    timeout: API_CONFIG.timeout,
 });
 
 const ScoreCategory = ({ title, scores, criteria }) => {

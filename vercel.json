@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/build",
+  "installCommand": "cd frontend && npm install",
+  "framework": null,
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/[...path]"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
+  "functions": {
+    "api/**/*.py": {
+      "runtime": "python3.9",
+      "maxDuration": 60
+    }
+  },
+  "env": {
+    "PYTHONPATH": "."
+  }
+}
+
