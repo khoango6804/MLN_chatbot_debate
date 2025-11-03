@@ -14,12 +14,7 @@
       "dest": "/$1"
     }
   ],
-  "functions": {
-    "api/**/*.py": {
-      "runtime": "python3.11",
-      "maxDuration": 60
-    }
-  },
+  
   "env": {
     "PYTHONPATH": "."
   }
