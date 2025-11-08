@@ -4,6 +4,7 @@ Handles all /api/* requests using dynamic routing
 """
 import sys
 import os
+import json
 from pathlib import Path
 
 # Add backend directory to Python path  
@@ -18,21 +19,26 @@ try:
     mangum_handler = Mangum(app, lifespan="off")
 except ImportError as e:
     print(f"Import error: {e}")
+    import traceback
+    traceback.print_exc()
     mangum_handler = None
 
 def handler(event, context):
     """
     Vercel serverless function handler for catch-all routes
+    Vercel automatically converts HTTP requests to API Gateway event format
     """
     if mangum_handler is None:
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
-            "body": {"detail": "Failed to initialize FastAPI app. Make sure mangum is installed."}
+            "body": json.dumps({"detail": "Failed to initialize FastAPI app. Make sure mangum is installed."})
         }
     
     try:
-        return mangum_handler(event, context)
+        # Mangum handles the event and context directly
+        response = mangum_handler(event, context)
+        return response
     except Exception as e:
         print(f"Error in handler: {e}")
         import traceback
@@ -40,6 +46,6 @@ def handler(event, context):
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
-            "body": {"detail": str(e)}
+            "body": json.dumps({"detail": str(e)})
         }
 
