@@ -27,8 +27,6 @@ import { useLayout } from '../context/LayoutContext';
 import Skeleton from '@mui/material/Skeleton';
 import { useTheme } from '@mui/material/styles';
 
-console.log('DEBATE ROOM JS LOADED');
-
 // Import API config
 import API_CONFIG from '../config/api';
 

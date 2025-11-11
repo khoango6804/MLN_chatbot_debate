@@ -4,20 +4,8 @@
   "outputDirectory": "frontend/build",
   "installCommand": "cd frontend && npm install",
   "framework": null,
-  "functions": {
-    "api/[...path].py": {
-      "runtime": "@vercel/python@3.9"
-    }
-  },
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/[...path]"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/[...path]" }
   ],
   "env": {
     "PYTHONPATH": "."
