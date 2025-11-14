@@ -66,8 +66,8 @@ const EmergencyTest = () => {
         resultText += `🎉🎉🎉 SUCCESS! API HOẠT ĐỘNG HOÀN HẢO!\n\n`;
         resultText += `✅ Backend trả về đúng format\n`;
         resultText += `✅ Message: "${responseData.message}"\n`;
-        resultText += `✅ Team ID: ${responseData.data?.team_id}\n`;
-        resultText += `✅ Topic: ${responseData.data?.topic}\n\n`;
+        resultText += `✅ Team ID: ${responseData.team_id || responseData.data?.team_id}\n`;
+        resultText += `✅ Topic: ${responseData.topic || responseData.data?.topic}\n\n`;
         resultText += `🚀 Sẽ điều hướng đến: /debate/${requestData.team_id}`;
 
         // Auto navigate after 3 seconds

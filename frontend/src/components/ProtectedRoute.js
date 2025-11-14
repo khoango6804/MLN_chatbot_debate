@@ -6,7 +6,7 @@ const ProtectedRoute = () => {
 
     // Nếu đã xác thực, render component con (AdminDashboard)
     // Nếu không, chuyển hướng đến trang đăng nhập
-    return isAuthenticated ? <Outlet /> : <Navigate to="/admin/login" replace />;
+    return isAuthenticated ? <Outlet /> : <Navigate to="/admin-login" replace />;
 };
 
 export default ProtectedRoute; 

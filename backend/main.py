@@ -6,6 +6,7 @@ from typing import List, Optional, Dict, Any
 import json
 from datetime import datetime
 from urllib.parse import unquote
+import unicodedata
 from debate_system import DebateSystem, DebateSession
 import random
 import re # Added for regex validation
@@ -16,6 +17,42 @@ app = FastAPI(title="MLN Debate System API", version="1.0.0")
 def decode_team_id(team_id: str) -> str:
     """Decode URL-encoded team_id to handle special characters"""
     return unquote(team_id)
+
+def normalize_team_key(team_id: str) -> str:
+    """Create a normalized key for team IDs to avoid Unicode/casing mismatches"""
+    return unicodedata.normalize("NFKC", team_id).strip().lower()
+
+def get_active_session(team_id: str):
+    """Resolve and return the active session data by team identifier"""
+    decoded_id = decode_team_id(team_id)
+    session_key = normalize_team_key(decoded_id)
+    session_data = active_sessions.get(session_key)
+    if not session_data:
+        print(f"❌ Session lookup failed for team_id='{decoded_id}'. Active sessions: {[data.get('team_id') for data in active_sessions.values()]}")
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session_key, session_data
+
+def get_any_session(team_id: str):
+    """Resolve and return session data from either active or completed sessions"""
+    decoded_id = decode_team_id(team_id)
+    session_key = normalize_team_key(decoded_id)
+    session_data = active_sessions.get(session_key)
+    if session_data:
+        return session_key, session_data
+
+    # Fallback: iterate active sessions in case of unexpected key mismatch
+    for key, active_data in active_sessions.items():
+        if normalize_team_key(active_data.get("team_id", "")) == session_key:
+            return key, active_data
+
+    for session in completed_sessions:
+        if normalize_team_key(session.get("team_id", "")) == session_key:
+            return session_key, session
+    for session in completed_sessions:
+        if normalize_team_key(session.get("session_key", "")) == session_key:
+            return session.get("session_key"), session
+    print(f"❌ Session lookup failed (any) for team_id='{decoded_id}'.")
+    raise HTTPException(status_code=404, detail="Session not found")
 
 # CORS configuration - Fixed to prevent duplicate headers
 # Updated for Vercel deployment - allows Vercel domains and localhost
@@ -33,6 +70,20 @@ allowed_origins = [
     "https://mlndebate.io.vn",
     "http://www.mlndebate.io.vn",
     "https://www.mlndebate.io.vn",
+]
+
+blocked_patterns = [
+    "tôi xin lỗi",
+    "tôi không thể",
+    "không thể trả lời",
+    "as an ai",
+    "i'm just an ai",
+    "sorry",
+    "cannot comply",
+    "asdf",
+    "ádfasd",
+    "ấd",
+    "ád",
 ]
 
 # Add Vercel preview/deployment URLs dynamically
@@ -69,7 +120,6 @@ except Exception as e:
 active_sessions = {}
 completed_sessions = []
 session_counter = 0
-
 class StartDebateRequest(BaseModel):
     course_code: str
     members: List[str]
@@ -101,14 +151,16 @@ async def start_debate(request: StartDebateRequest):
     # Use provided team_id or generate one
     if request.team_id and request.team_id.strip():
         team_id = request.team_id.strip()
-        # Check if team_id already exists
-        if team_id in active_sessions:
-            raise HTTPException(status_code=400, detail=f"Team ID '{team_id}' already exists. Please choose a different one.")
     else:
         # Auto-generate if not provided
         global session_counter
         session_counter += 1
         team_id = f"TEAM{session_counter:03d}"
+
+    session_key = normalize_team_key(team_id)
+    # Check if normalized team_id already exists
+    if session_key in active_sessions:
+        raise HTTPException(status_code=400, detail=f"Team ID '{team_id}' already exists. Please choose a different one.")
     
     try:
         session = DebateSession(debate_system)
@@ -117,9 +169,10 @@ async def start_debate(request: StartDebateRequest):
         # Randomly assign stance (agree/disagree)
         stance = random.choice(["agree", "disagree"])
         
-        active_sessions[team_id] = {
+        active_sessions[session_key] = {
             "session": session,
             "team_id": team_id,
+            "session_key": session_key,
             "topic": topic,
             "members": request.members,
             "course_code": request.course_code,
@@ -143,12 +196,8 @@ async def start_debate(request: StartDebateRequest):
 @app.post("/api/debate/{team_id}/arguments")
 async def submit_arguments(team_id: str, request: SubmitArgumentsRequest):
     """Submit Phase 1 arguments"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # 🔧 FIX: Store arguments in BOTH places for sync
@@ -173,12 +222,8 @@ async def submit_arguments(team_id: str, request: SubmitArgumentsRequest):
 @app.post("/api/debate/{team_id}/question")
 async def submit_question(team_id: str, request: SubmitQuestionRequest):
     """Submit a question in Phase 2B"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         
         # Generate Socratic response
         ai_response = debate_system.generate_socratic_answer(
@@ -201,15 +246,11 @@ async def submit_question(team_id: str, request: SubmitQuestionRequest):
 @app.get("/api/debate/{team_id}/info")
 async def get_debate_info(team_id: str):
     """Get debate session information"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         return {
             "success": True,
-            "team_id": team_id,
+            "team_id": session_data["team_id"],
             "topic": session_data["topic"],
             "members": session_data["members"],
             "course_code": session_data["course_code"],
@@ -227,12 +268,8 @@ async def get_debate_info(team_id: str):
 @app.get("/api/debate/{team_id}/turns")
 async def get_debate_turns(team_id: str):
     """Get separated Phase 2 and Phase 3 turns"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # Format Phase 2 turns (AI asks, Student answers)
@@ -273,12 +310,8 @@ class StanceRequest(BaseModel):
 @app.post("/api/debate/{team_id}/stance")
 async def set_stance(team_id: str, request: StanceRequest):
     """Set team stance (ĐỒNG TÌNH or PHẢN ĐỐI)"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session_data["stance"] = request.stance
         
         return {
@@ -292,12 +325,8 @@ async def set_stance(team_id: str, request: StanceRequest):
 @app.post("/api/debate/{team_id}/phase")
 async def update_phase(team_id: str, request: UpdatePhaseRequest):
     """Update debate phase"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session_data["current_phase"] = request.phase
         
         return {
@@ -312,15 +341,11 @@ async def update_phase(team_id: str, request: UpdatePhaseRequest):
 @app.post("/api/debate/{team_id}/phase1")
 async def get_ai_arguments_phase1(team_id: str):
     """Generate AI arguments for Phase 1"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     if not debate_system:
         raise HTTPException(status_code=503, detail="Debate system not available")
     
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
         topic = session_data["topic"]
         stance = session_data.get("stance", "agree")
@@ -351,15 +376,11 @@ class Phase2Request(BaseModel):
 @app.post("/api/debate/{team_id}/phase2")
 async def get_ai_questions_phase2(team_id: str, request: Phase2Request):
     """Generate AI questions for Phase 2 and store student arguments"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     if not debate_system:
         raise HTTPException(status_code=503, detail="Debate system not available")
     
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
         topic = session_data["topic"]
         
@@ -403,12 +424,8 @@ async def get_ai_questions_phase2(team_id: str, request: Phase2Request):
 @app.post("/api/debate/{team_id}/phase2/start")
 async def start_phase2(team_id: str):
     """Start Phase 2 of the debate"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session_data["current_phase"] = "Phase 2"
         
         return {
@@ -427,12 +444,8 @@ class AIQuestionTurnRequest(BaseModel):
 @app.post("/api/debate/{team_id}/ai-question/turn")
 async def ai_question_turn(team_id: str, request: AIQuestionTurnRequest):
     """Handle Phase 2: Student answers AI question and gets next AI question"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Debate session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # Validate student answer
@@ -484,12 +497,8 @@ async def ai_question_turn(team_id: str, request: AIQuestionTurnRequest):
 @app.post("/api/debate/{team_id}/ai-question/generate")
 async def generate_next_ai_question(team_id: str):
     """Generate next AI question for Phase 2 based on previous student answers"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # Get the latest student answer to generate question from
@@ -623,17 +632,20 @@ class StudentQuestionTurnRequest(BaseModel):
 @app.post("/api/debate/{team_id}/student-question/turn")
 async def student_question_turn(team_id: str, request: StudentQuestionTurnRequest):
     """Handle Phase 3: Student asks question and gets AI answer"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Debate session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        _, session_data = get_active_session(team_id)
         session = session_data["session"]
+        
+        cleaned_question = request.question.strip()
+        if len(cleaned_question) < 12 or '?' not in cleaned_question or not re.search(r'[a-zA-ZÀ-ỹ]', cleaned_question):
+            raise HTTPException(
+                status_code=400,
+                detail="Câu hỏi chưa đủ rõ ràng. Vui lòng đặt lại với nội dung cụ thể và có dấu chấm hỏi."
+            )
         
         # 🔧 FIX: Use session.add_phase3_turn() for Phase 3 data
         # First add student question
-        session.add_phase3_turn("student", request.question.strip(), None)
+        session.add_phase3_turn("student", cleaned_question, None)
         
         # Generate AI answer using Socratic method
         try:
@@ -653,7 +665,11 @@ async def student_question_turn(team_id: str, request: StudentQuestionTurnReques
         except Exception as e:
             print(f"Error generating AI answer: {e}")
             # If AI generation fails, add default response
-            session.add_phase3_turn("ai", None, "Tôi cần thêm thời gian để suy nghĩ về câu hỏi này. Hãy thử câu hỏi khác.")
+            session.add_phase3_turn(
+                "ai",
+                None,
+                "Tôi không chắc mình hiểu câu hỏi của bạn. Bạn có thể diễn đạt rõ hơn hoặc nêu cụ thể điều muốn hỏi không?"
+            )
         
         print(f"🔧 DEBUG: Phase 3 turns added. Total phase3_turns: {len(session.phase3_turns)}")
         
@@ -669,12 +685,8 @@ async def student_question_turn(team_id: str, request: StudentQuestionTurnReques
 @app.delete("/api/debate/{team_id}/end")
 async def end_debate(team_id: str):
     """End/delete a debate session"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         
         # Move to completed sessions as "ended"
         completed_session = {
@@ -684,7 +696,7 @@ async def end_debate(team_id: str):
             "end_reason": "manual_end"
         }
         completed_sessions.append(completed_session)
-        del active_sessions[team_id]
+        del active_sessions[session_key]
         
         return {
             "success": True,
@@ -696,12 +708,8 @@ async def end_debate(team_id: str):
 @app.post("/api/debate/{team_id}/complete")
 async def complete_debate(team_id: str):
     """Complete a debate session after Phase 5 evaluation"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         
         # Check if evaluation exists (Phase 5 completed)
         if "evaluation" not in session_data:
@@ -714,7 +722,7 @@ async def complete_debate(team_id: str):
             "completed_at": datetime.now().isoformat()
         }
         completed_sessions.append(completed_session)
-        del active_sessions[team_id]
+        del active_sessions[session_key]
         
         return {
             "success": True,
@@ -730,9 +738,9 @@ async def get_sessions():
     try:
         # Convert active sessions to API format
         active = []
-        for team_id, session_data in active_sessions.items():
+        for session_key, session_data in active_sessions.items():
             active.append({
-                "team_id": team_id,
+                "team_id": session_data.get("team_id", session_key),
                 "topic": session_data["topic"],
                 "status": session_data["status"],
                 "current_phase": session_data["current_phase"],
@@ -863,9 +871,9 @@ async def get_live_scoring():
     """Get live scoring data"""
     try:
         live_data = []
-        for team_id, session_data in active_sessions.items():
+        for session_key, session_data in active_sessions.items():
             live_data.append({
-                "team_id": team_id,
+                "team_id": session_data.get("team_id", session_key),
                 "topic": session_data["topic"],
                 "status": "in_progress",
                 "current_phase": session_data["current_phase"],
@@ -896,12 +904,8 @@ async def get_live_scoring():
 @app.post("/api/debate/{team_id}/phase4/conclusion")
 async def submit_conclusion(team_id: str, request: SubmitArgumentsRequest):
     """Phase 4 Step 1: Submit student final conclusion - why they should win"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # Check if conclusion already exists
@@ -939,12 +943,8 @@ async def submit_conclusion(team_id: str, request: SubmitArgumentsRequest):
 @app.post("/api/debate/{team_id}/phase5/evaluate")
 async def evaluate_debate_phase5(team_id: str):
     """Phase 5: Final evaluation and scoring"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # Generate comprehensive evaluation
@@ -965,15 +965,11 @@ async def evaluate_debate_phase5(team_id: str):
 @app.get("/api/debate/{team_id}/phase4/info")
 async def get_phase4_info(team_id: str):
     """Get Phase 4 conclusion information"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         return {
             "success": True,
-            "team_id": team_id,
+            "team_id": session_data["team_id"],
             "topic": session_data["topic"],
             "current_phase": session_data["current_phase"],
             "conclusion": session_data.get("conclusion", []),
@@ -987,12 +983,8 @@ async def get_phase4_info(team_id: str):
 @app.post("/api/debate/{team_id}/phase4/evaluate")
 async def evaluate_phase4(team_id: str):
     """Phase 4 Step 3: Mark Phase 4 as completed after AI counter-conclusion"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         
         # Check if already completed
         if session_data.get("current_phase") == "Phase 4 Completed":
@@ -1023,15 +1015,11 @@ async def evaluate_phase4(team_id: str):
 @app.post("/api/debate/{team_id}/phase4/ai-conclusion")
 async def generate_ai_conclusion(team_id: str):
     """Phase 4 Step 2: Generate AI counter-conclusion - why AI should win"""
-    team_id = decode_team_id(team_id)
-    if team_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
     if not debate_system:
         raise HTTPException(status_code=503, detail="Debate system not available")
     
     try:
-        session_data = active_sessions[team_id]
+        session_key, session_data = get_active_session(team_id)
         session = session_data["session"]
         
         # Check if AI counter-arguments already exist
@@ -1071,24 +1059,11 @@ async def generate_ai_conclusion(team_id: str):
 @app.get("/api/debate/{team_id}/export_docx")
 async def export_debate_report(team_id: str):
     """Export debate report as DOCX file with complete debate history"""
-    team_id = decode_team_id(team_id)
-    
-    # Check both active and completed sessions
-    session_data = None
-    session_obj = None
-    if team_id in active_sessions:
-        session_data = active_sessions[team_id]
-        session_obj = session_data.get("session")
-    else:
-        # Check completed sessions
-        for completed in completed_sessions:
-            if completed.get("team_id") == team_id:
-                session_data = completed
-                session_obj = completed.get("session")
-                break
-    
-    if not session_data:
-        raise HTTPException(status_code=404, detail="Session not found")
+    decoded_id = decode_team_id(team_id)
+
+    _, session_data = get_any_session(team_id)
+    session_obj = session_data.get("session")
+    team_id_display = session_data.get("team_id", decoded_id)
     
     try:
         from docx import Document
@@ -1102,7 +1077,7 @@ async def export_debate_report(team_id: str):
         
         # Team information
         doc.add_heading('📋 Thông Tin Nhóm', level=1)
-        doc.add_paragraph(f"Team ID: {team_id}")
+        doc.add_paragraph(f"Team ID: {team_id_display}")
         doc.add_paragraph(f"Chủ đề: {session_data.get('topic', 'N/A')}")
         doc.add_paragraph(f"Thành viên: {', '.join(session_data.get('members', []))}")
         doc.add_paragraph(f"Mã học phần: {session_data.get('course_code', 'N/A')}")
@@ -1352,16 +1327,17 @@ async def export_debate_report(team_id: str):
 @app.delete("/api/admin/history/{team_id}")
 async def delete_session_history(team_id: str):
     """Delete a session from completed history"""
-    team_id = decode_team_id(team_id)
+    decoded_id = decode_team_id(team_id)
+    normalized_key = normalize_team_key(decoded_id)
     
     try:
         # Find and remove from completed sessions
         for i, session in enumerate(completed_sessions):
-            if session.get("team_id") == team_id:
+            if normalize_team_key(session.get("team_id", "")) == normalized_key:
                 removed_session = completed_sessions.pop(i)
                 return {
                     "success": True,
-                    "message": f"Session {team_id} deleted from history successfully",
+                    "message": f"Session {removed_session.get('team_id', decoded_id)} deleted from history successfully",
                     "deleted_session": {
                         "team_id": removed_session["team_id"],
                         "topic": removed_session.get("topic", "N/A"),
@@ -1370,7 +1346,7 @@ async def delete_session_history(team_id: str):
                 }
         
         # If not found in completed, check if it's in active sessions
-        if team_id in active_sessions:
+        if normalized_key in active_sessions:
             raise HTTPException(status_code=400, detail="Cannot delete active session. Please end it first.")
         
         # Session not found

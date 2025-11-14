@@ -52,6 +52,7 @@ function formatAIResponse(text) {
 function DebateRoom() {
   const navigate = useNavigate();
   const { team_id } = useParams(); // Lấy team_id từ URL
+  const teamIdForApi = React.useMemo(() => encodeURIComponent(team_id || ''), [team_id]);
   const { setShowHeader, setShowFooter } = useLayout();
   const theme = useTheme();
 
@@ -104,7 +105,7 @@ function DebateRoom() {
     const fetchSessionInfo = async () => {
       try {
         setLoading(true);
-        const response = await api.get(`/debate/${team_id}/info`);
+        const response = await api.get(`/debate/${teamIdForApi}/info`);
         const { topic, members, course_code, current_phase } = response.data;
         
         // 🔧 FIX: Check if session already has stance and phase
@@ -114,7 +115,7 @@ function DebateRoom() {
         if (!sessionStance) {
           // Randomly assign stance only if not already set
           const randomStance = Math.random() < 0.5 ? 'ĐỒNG TÌNH' : 'PHẢN ĐỐI';
-          await api.post(`/debate/${team_id}/stance`, { stance: randomStance });
+          await api.post(`/debate/${teamIdForApi}/stance`, { stance: randomStance });
           sessionStance = randomStance;
         }
         
@@ -127,7 +128,7 @@ function DebateRoom() {
           setPhase(2);
           // Load existing Phase 2 turns data immediately
           try {
-            const turnsResponse = await api.get(`/debate/${team_id}/turns`);
+            const turnsResponse = await api.get(`/debate/${teamIdForApi}/turns`);
             if (turnsResponse.data.success && turnsResponse.data.phase2_turns) {
               setTurnsPhase2(turnsResponse.data.phase2_turns);
               console.log('✅ Loaded existing Phase 2 turns on page load:', turnsResponse.data.phase2_turns.length);
@@ -139,7 +140,7 @@ function DebateRoom() {
           setPhase(3);
           // Load existing turns for both phases
           try {
-            const turnsResponse = await api.get(`/debate/${team_id}/turns`);
+            const turnsResponse = await api.get(`/debate/${teamIdForApi}/turns`);
             if (turnsResponse.data.success) {
               setTurnsPhase2(turnsResponse.data.phase2_turns || []);
               setTurnsPhase3(turnsResponse.data.phase3_turns || []);
@@ -171,7 +172,7 @@ function DebateRoom() {
 
     fetchSessionInfo();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [team_id, navigate]);
+  }, [team_id, teamIdForApi, navigate]);
 
   // Define utility functions first
   const requestFullscreen = async () => {
@@ -202,7 +203,7 @@ function DebateRoom() {
   const updateBackendPhase = useCallback(async (newPhase) => {
     if (!teamInfo) return;
     try {
-      await api.post(`/debate/${teamInfo.teamId}/phase`, { phase: getPhaseName(newPhase) });
+      await api.post(`/debate/${encodeURIComponent(teamInfo.teamId || '')}/phase`, { phase: getPhaseName(newPhase) });
     } catch (error) {
       console.error("Failed to update phase on backend", error);
     }
@@ -222,7 +223,7 @@ function DebateRoom() {
       setLoading(true);
       setError(null);
       
-      const response = await api.post(`/debate/${team_id}/phase1`);
+      const response = await api.post(`/debate/${teamIdForApi}/phase1`);
       console.log('Response:', response.data);      
       if (response.data?.data?.ai_arguments) {
         setAiPoints(response.data.data.ai_arguments);
@@ -239,7 +240,7 @@ function DebateRoom() {
     } finally {
       setLoading(false);
     }
-  }, [team_id]);
+  }, [team_id, teamIdForApi]);
 
   // Define handleEvaluation function before using it
   const handleEvaluation = useCallback(async () => {
@@ -254,7 +255,7 @@ function DebateRoom() {
       }
       
       try {
-        const conclusionResponse = await api.post(`/debate/${team_id}/phase4/conclusion`, {
+        const conclusionResponse = await api.post(`/debate/${teamIdForApi}/phase4/conclusion`, {
           team_id: team_id,
           arguments: [conclusion] // Phase 4 chỉ cần 1 conclusion
         });
@@ -274,7 +275,7 @@ function DebateRoom() {
 
       // Step 2: Generate AI counter-arguments (Skip nếu có lỗi)
       try {
-        const aiResponse = await api.post(`/debate/${team_id}/phase4/ai-conclusion`);
+        const aiResponse = await api.post(`/debate/${teamIdForApi}/phase4/ai-conclusion`);
         console.log('AI COUNTER-CONCLUSION RESPONSE', aiResponse.data);
         setAiCounterArguments(aiResponse.data.ai_counter_arguments || []);
       } catch (aiErr) {
@@ -285,7 +286,7 @@ function DebateRoom() {
 
       // Step 3: Complete Phase 4
       try {
-        await api.post(`/debate/${team_id}/phase4/evaluate`);
+        await api.post(`/debate/${teamIdForApi}/phase4/evaluate`);
         console.log('PHASE 4 COMPLETED');
       } catch (phase4Err) {
         // If already completed, that's fine
@@ -295,7 +296,7 @@ function DebateRoom() {
       }
 
       // Step 4: Final evaluation (Phase 5)
-      const response = await api.post(`/debate/${team_id}/phase5/evaluate`);
+      const response = await api.post(`/debate/${teamIdForApi}/phase5/evaluate`);
       console.log('EVALUATION RESPONSE', response.data);
       const evaluationData = response.data.data?.evaluation || response.data.evaluation;
       console.log('SETTING EVALUATION:', evaluationData);
@@ -314,7 +315,7 @@ function DebateRoom() {
     } finally {
       setLoading(false);
     }
-  }, [team_id, navigate, studentArguments]);
+  }, [team_id, teamIdForApi, navigate, studentArguments]);
 
   // Handle AI counter-conclusion generation
   const handleAICounterConclusion = async () => {
@@ -329,7 +330,7 @@ function DebateRoom() {
       }
       
       try {
-        const conclusionResponse = await api.post(`/debate/${team_id}/phase4/conclusion`, {
+        const conclusionResponse = await api.post(`/debate/${teamIdForApi}/phase4/conclusion`, {
           team_id: team_id,
           arguments: [conclusion] // Phase 4 chỉ cần 1 conclusion
         });
@@ -340,7 +341,7 @@ function DebateRoom() {
       }
       
       // Step 2: Get AI counter arguments
-      const response = await api.post(`/debate/${team_id}/phase4/ai-conclusion`);
+      const response = await api.post(`/debate/${teamIdForApi}/phase4/ai-conclusion`);
       console.log('AI COUNTER-CONCLUSION RESPONSE', response.data);
       setAiCounterArguments(response.data.ai_counter_arguments || []);
       setSuccess("AI đã tạo luận điểm tổng kết phản bác!");
@@ -390,14 +391,14 @@ function DebateRoom() {
               setLoading(true);
               try {
                 // Step 1: Submit conclusion
-                await api.post(`/debate/${team_id}/phase4/conclusion`, {
+                await api.post(`/debate/${teamIdForApi}/phase4/conclusion`, {
                   team_id: team_id,
                   arguments: [studentArguments[0].trim()]
                 });
                 
                 // Step 2: Generate AI counter-arguments
                 try {
-                  const aiResponse = await api.post(`/debate/${team_id}/phase4/ai-conclusion`);
+                  const aiResponse = await api.post(`/debate/${teamIdForApi}/phase4/ai-conclusion`);
                   setAiCounterArguments(aiResponse.data.ai_counter_arguments || ["AI không có phản hồi"]);
                 } catch (aiErr) {
                   console.log('AI counter-arguments skipped:', aiErr.response?.data);
@@ -406,7 +407,7 @@ function DebateRoom() {
                 
                 // Step 3: Complete Phase 4
                 try {
-                  await api.post(`/debate/${team_id}/phase4/evaluate`);
+      await api.post(`/debate/${teamIdForApi}/phase4/evaluate`);
                 } catch (phase4Err) {
                   if (phase4Err.response?.status !== 400) {
                     console.log('Phase 4 evaluate error (continuing):', phase4Err.response?.data);
@@ -415,7 +416,7 @@ function DebateRoom() {
                 
                 // Step 4: Final evaluation (Phase 5)
                 setSuccess("⏳ Thời gian hết! AI đang phân tích toàn bộ debate và chấm điểm... (5-10 giây)");
-                const response = await api.post(`/debate/${team_id}/phase5/evaluate`);
+                const response = await api.post(`/debate/${teamIdForApi}/phase5/evaluate`);
                 const evaluationData = response.data.data?.evaluation || response.data.evaluation;
                 setEvaluation(evaluationData);
                 setPhase(5);
@@ -441,7 +442,7 @@ function DebateRoom() {
       setTimeLeft(prevTime => prevTime - 1);
     }, 1000);
     return () => clearInterval(intervalId);
-  }, [timeLeft, timerActive, phase, handlePhase1, studentArguments, team_id, api, setLoading, setEvaluation, setPhase, setTimerActive, setSuccess, setError, navigate]);
+  }, [timeLeft, timerActive, phase, handlePhase1, studentArguments, team_id, teamIdForApi, api, setLoading, setEvaluation, setPhase, setTimerActive, setSuccess, setError, navigate]);
 
   // Effect to set timers when phase changes
   useEffect(() => {
@@ -534,7 +535,7 @@ function DebateRoom() {
       setLoading(true);
       setError(null);
       // 1. Lấy câu hỏi AI từ Phase 2
-      const phase2Response = await api.post(`/debate/${team_id}/phase2`, { team_arguments: studentArguments });
+      const phase2Response = await api.post(`/debate/${teamIdForApi}/phase2`, { team_arguments: studentArguments });
       console.log('Phase 2 AI Questions Response:', phase2Response.data);
       
       // 2. Chuyển đổi ai_questions thành format turns (chỉ lấy 1 câu hỏi đầu tiên)
@@ -551,7 +552,7 @@ function DebateRoom() {
       setTurnsPhase2(formattedTurns);
       
       // 3. Khởi tạo phase 2
-      await api.post(`/debate/${team_id}/phase2/start`);
+      await api.post(`/debate/${teamIdForApi}/phase2/start`);
       
       setSuccess('Đã lấy câu hỏi AI và bắt đầu Phase 2!');
       setPhase(2); // Sang phase 2
@@ -577,6 +578,14 @@ function DebateRoom() {
     const hasLetters = /[a-zA-ZÀ-ỹ]/.test(trimmedContent);
     if (!hasLetters) return false;
     
+    return true;
+  };
+
+  const isValidQuestion = (content) => {
+    if (!isValidContent(content)) return false;
+    const trimmed = content.trim();
+    if (!trimmed.includes('?')) return false;
+    if (!/\s/.test(trimmed)) return false; // đảm bảo có ít nhất một khoảng trắng -> có từ
     return true;
   };
 
@@ -631,7 +640,7 @@ function DebateRoom() {
       setCurrentAnswer('');
       
       // Send to backend
-      const response = await api.post(`/debate/${team_id}/ai-question/turn`, {
+      const response = await api.post(`/debate/${teamIdForApi}/ai-question/turn`, {
         answer: answerToSubmit,
         asker: 'student',
         question: lastAIQuestion.question,
@@ -686,7 +695,7 @@ function DebateRoom() {
       setError(null);
       
       console.log('🔧 DEBUG: Requesting next AI question for team:', team_id);
-      const response = await api.post(`/debate/${team_id}/ai-question/generate`);
+      const response = await api.post(`/debate/${teamIdForApi}/ai-question/generate`);
       console.log('🔧 DEBUG: AI question generate response:', response.data);
       
       if (response.data.turns) {
@@ -729,8 +738,8 @@ function DebateRoom() {
   // Gửi lượt debate phase 3 (Sinh viên chất vấn AI)
   const handleSendStudentQuestion = async (question) => {
     // Enhanced validation cho câu hỏi
-    if (!isValidContent(question)) {
-      setError('Vui lòng nhập câu hỏi có ý nghĩa (tối thiểu 10 ký tự, có chữ cái)');
+    if (!isValidQuestion(question)) {
+      setError('Vui lòng nhập câu hỏi rõ ràng (có dấu chấm hỏi và nội dung cụ thể).');
       return;
     }
     
@@ -748,7 +757,7 @@ function DebateRoom() {
       setTurnsPhase3(prev => [...prev, optimisticQuestionTurn]);
       setCurrentAnswer(''); // Clear input field immediately
       
-      const response = await api.post(`/debate/${team_id}/student-question/turn`, {
+      const response = await api.post(`/debate/${teamIdForApi}/student-question/turn`, {
         asker: 'student',
         question: question.trim(),
         answer: null
@@ -789,7 +798,7 @@ function DebateRoom() {
   const handleSendConclusion = async (conclusion) => {
     try {
       setLoading(true);
-      await api.post(`/debate/${team_id}/conclusion`, { conclusion });
+      await api.post(`/debate/${teamIdForApi}/conclusion`, { conclusion });
       setPhase(5);
     } catch (err) {
       setError('Gửi kết luận thất bại!');
@@ -801,7 +810,7 @@ function DebateRoom() {
   const handleGetResult = async () => {
     try {
       setLoading(true);
-      const res = await api.get(`/debate/${team_id}/result`);
+      const res = await api.get(`/debate/${teamIdForApi}/result`);
       setResult(res.data);
     } catch (err) {
       setError('Lấy kết quả debate thất bại!');
@@ -853,7 +862,7 @@ function DebateRoom() {
       const config = {
         data: reason ? { reason: reason } : undefined,
       };
-      await api.delete(`/debate/${team_id}/end`, config);
+      await api.delete(`/debate/${teamIdForApi}/end`, config);
       setSuccess('Phiên đã kết thúc.');
       if (document.fullscreenElement) {
         document.exitFullscreen();
@@ -872,7 +881,7 @@ function DebateRoom() {
         return;
     }
     try {
-        const response = await api.get(`/debate/${team_id}/export_docx`, {
+        const response = await api.get(`/debate/${teamIdForApi}/export_docx`, {
             responseType: 'blob',
         });
 
@@ -912,7 +921,7 @@ function DebateRoom() {
           
           // 🔧 FIX: First try to load existing Phase 2 turns data
           console.log('🔧 DEBUG: Loading existing Phase 2 turns data...');
-          const turnsResponse = await api.get(`/debate/${team_id}/turns`);
+          const turnsResponse = await api.get(`/debate/${teamIdForApi}/turns`);
           if (turnsResponse.data.success && turnsResponse.data.phase2_turns && turnsResponse.data.phase2_turns.length > 0) {
             // Existing turns found - load them
             console.log('🔧 DEBUG: Found existing Phase 2 turns:', turnsResponse.data.phase2_turns);
@@ -922,11 +931,24 @@ function DebateRoom() {
             // No existing turns - initialize Phase 2
             console.log('🔧 DEBUG: No existing turns found, initializing Phase 2...');
             
-            // 1. Lấy câu hỏi AI cho Phase 2
-            const questionsResponse = await api.post(`/debate/${team_id}/phase2`);
+            // 1. Lấy luận điểm đã lưu để tạo câu hỏi
+            let storedArguments = [];
+            try {
+              const infoResponse = await api.get(`/debate/${teamIdForApi}/info`);
+              if (infoResponse.data?.arguments?.length) {
+                storedArguments = infoResponse.data.arguments;
+              }
+            } catch (infoErr) {
+              console.warn('Không thể lấy thông tin session để khôi phục luận điểm:', infoErr);
+            }
+
+            const payloadArguments = storedArguments.length > 0 ? storedArguments : ["Nhóm chúng tôi đồng tình với chủ đề và đã trình bày luận điểm trước đó."];
+
+            // 2. Lấy câu hỏi AI cho Phase 2
+            const questionsResponse = await api.post(`/debate/${teamIdForApi}/phase2`, { team_arguments: payloadArguments });
             console.log('Phase 2 Questions Response:', questionsResponse.data);
             
-            // 2. Chuyển đổi ai_questions thành format turns (chỉ lấy 1 câu hỏi đầu tiên)
+            // 3. Chuyển đổi ai_questions thành format turns (chỉ lấy 1 câu hỏi đầu tiên)
             const aiQuestions = questionsResponse.data.data?.ai_questions || [];
             const selectedQuestion = aiQuestions.length > 0 ? aiQuestions[0] : "Không có câu hỏi từ AI";
             const formattedTurns = [{
@@ -939,8 +961,8 @@ function DebateRoom() {
             console.log('Formatted AI Questions as Turns:', formattedTurns);
             setTurnsPhase2(formattedTurns);
             
-            // 3. Khởi tạo phase 2
-            await api.post(`/debate/${team_id}/phase2/start`);
+            // 4. Khởi tạo phase 2
+            await api.post(`/debate/${teamIdForApi}/phase2/start`);
           }
           
         } catch (error) {
@@ -951,13 +973,13 @@ function DebateRoom() {
         }
       })();
     }
-  }, [phase, team_id, turnsPhase2.length]);
+  }, [phase, team_id, teamIdForApi, turnsPhase2.length]);
 
   // Khi chuyển sang phase 3, load existing turns data correctly separated
   const handleGoToPhase3 = async () => {
     try {
       // Load existing turns data from backend with proper separation
-      const response = await api.get(`/debate/${team_id}/turns`);
+      const response = await api.get(`/debate/${teamIdForApi}/turns`);
       if (response.data.success) {
         setTurnsPhase2(response.data.phase2_turns || []);
         setTurnsPhase3(response.data.phase3_turns || []);
