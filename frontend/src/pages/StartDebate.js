@@ -445,43 +445,6 @@ const StartDebate = () => {
                     {loading ? 'Đang tạo phiên...' : 'Bắt đầu tranh luận'}
                   </Button>
                   
-                  {/* Debug Test Button */}
-                  <Button
-                    onClick={async () => {
-                      console.log('🧪 Direct API Test - Starting...');
-                      try {
-                        const testData = {
-                          members: ["Test User Debug"],
-                          course_code: "MLN111+MLN122"
-                        };
-                        console.log('🧪 Test request:', testData);
-                        
-                        const response = await axios.post(`${API_CONFIG.baseURL}/debate/start`, testData);
-                        console.log('🧪 Test response:', response);
-                        console.log('🧪 Test success:', response.data);
-                        
-                        alert(`✅ API TEST SUCCESS:\n${JSON.stringify(response.data, null, 2)}`);
-                      } catch (err) {
-                        console.error('🧪 Test error:', err);
-                        console.error('🧪 Test error response:', err.response);
-                        alert(`❌ API TEST ERROR:\n${err.message}\nResponse: ${err.response?.data?.detail || 'No detail'}`);
-                      }
-                    }}
-                    variant="outlined"
-                    size="small"
-                    sx={{ 
-                      mt: 1, 
-                      fontSize: '12px',
-                      borderColor: '#007AFF',
-                      color: '#007AFF',
-                      '&:hover': {
-                        borderColor: '#0056CC',
-                        backgroundColor: 'rgba(0, 122, 255, 0.04)'
-                      }
-                    }}
-                  >
-                    🧪 Test API Debug
-                  </Button>
                 </Box>
               </CardContent>
             </Card>
